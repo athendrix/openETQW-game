@@ -4,6 +4,8 @@
 #include "precompiled.h"
 #pragma hdrstop
 
+#include "rules/LoginThrottle.h"
+
 #if defined( _DEBUG ) && !defined( ID_REDIRECT_NEWDELETE )
 #define new DEBUG_NEW
 #undef THIS_FILE
@@ -540,6 +542,11 @@ int idGameLocal::GetMaxPrivateClients( void ) {
 	return max;
 }
 
+sdLoginThrottle& LoginThrottle( void ) {
+	static sdLoginThrottle throttle;
+	return throttle;
+}
+
 /*
 ================
 idGameLocal::ServerAllowClient
@@ -591,7 +598,7 @@ allowReply_t idGameLocal::ServerAllowClient( int numClients, int numBots, const 
 
 	bool isPrivateClient = false;
 	const char* privatePass = g_privatePassword.GetString();
-	if ( *privatePass != '\0' && idStr::Cmp( privatePass, password ) == 0 ) {
+	if ( *privatePass != '\0' && LoginThrottle().Allowed( lookup.ip, sys->Milliseconds() ) && sdLoginThrottle::PasswordsMatch( privatePass, password ) ) {
 		isPrivateClient = true;
 		numAvailableSlots = maxPlayers; // with private password, any slot is available
 	} else if ( numReservedSlots > 0 ) {
@@ -615,6 +622,11 @@ allowReply_t idGameLocal::ServerAllowClient( int numClients, int numBots, const 
 
 	if ( !isPrivateClient ) {
 		if ( si_needPass.GetBool() ) {
+			const int now = sys->Milliseconds();
+			if ( !LoginThrottle().Allowed( lookup.ip, now ) ) {
+				reason = ALLOWFAIL_INVALIDPASSWORD;
+				return ALLOW_BADPASS;
+			}
 			const char* pass = g_password.GetString();
 			if ( *pass == '\0' ) {
 				// Gordon: FIXME: This is rubbish
@@ -625,11 +637,13 @@ allowReply_t idGameLocal::ServerAllowClient( int numClients, int numBots, const 
 				return ALLOW_NOTYET;
 			}
 
-			if ( idStr::Cmp( pass, password ) != 0 ) {
+			if ( !sdLoginThrottle::PasswordsMatch( pass, password ) ) {
+				LoginThrottle().Failed( lookup.ip, now );
 				reason = ALLOWFAIL_INVALIDPASSWORD;
 				Printf( "Rejecting client %s from IP '%i.%i.%i.%i': invalid password\n", guid, address.ip[ 0 ], address.ip[ 1 ], address.ip[ 2 ], address.ip[ 3 ] );
 				return ALLOW_BADPASS;
 			}
+			LoginThrottle().Succeeded( lookup.ip );
 		}
 	}
 
@@ -2055,12 +2069,10 @@ void idGameLocal::ServerProcessReliableMessage( int clientNum, const idBitMsg &m
 			break;
 		}
 		case GAME_RELIABLE_CMESSAGE_RESERVECLIENTSLOT: {
-			sdNetClientId netClientId;
-
-			netClientId.id[0] = msg.ReadLong();
-			netClientId.id[1] = msg.ReadLong();
-
-			ReserveClientSlot( netClientId );
+			// a slot held for a friend's online account id (Demonware invites); without the
+			// online service there are no such ids to hold a slot for, so nothing is reserved
+			msg.ReadLong();
+			msg.ReadLong();
 			break;
 		}
 		case GAME_RELIABLE_CMESSAGE_REQUESTSTATS: {

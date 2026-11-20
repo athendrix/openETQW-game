@@ -1094,7 +1094,7 @@ void idPlayer::OnProficiencyGain( int index, float count, const char* reason ) {
 		text.RemoveColors();
 
 		gameLocal.LogProficiency( text.c_str() );
-		gameLocal.Printf( text.c_str() );
+		gameLocal.Printf( "%s", text.c_str() );
 		if ( stats.xp == NULL || stats.totalXP == NULL ) {
 			gameLocal.Printf( "No stats for: %s\n", type->GetName() );
 		}

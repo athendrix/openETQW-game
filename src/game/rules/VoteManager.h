@@ -216,6 +216,7 @@ public:
 	};
 
 	static const int							MAX_VOTES = 1024;
+	static const int							MAX_VOTE_TEXT_PARMS = 16;
 
 												sdVoteManagerLocal( void );
 												~sdVoteManagerLocal( void );

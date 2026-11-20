@@ -1290,7 +1290,7 @@ sdVoteManagerLocal::FreeVote
 ================
 */
 void sdVoteManagerLocal::FreeVote( int index ) {
-	if ( index < 0 || index > MAX_VOTES ) {
+	if ( index < 0 || index >= MAX_VOTES ) {
 		assert( false );
 		return;
 	}
@@ -1401,22 +1401,32 @@ void sdVoteManagerLocal::ClientReadNetworkMessage( const idBitMsg& msg ) {
 	switch ( message ) {
 		case VM_CREATE: {
 			int index = msg.ReadBits( idMath::BitsForInteger( MAX_VOTES ) );
+			if ( index < 0 || index >= MAX_VOTES ) {
+				break;
+			}
 			FreeVote( index );
 
 			if ( msg.ReadBits( 1 ) != 0 ) {
 				int client = msg.ReadByte();
-				if ( client >= 0 || client < MAX_CLIENTS ) {
+				if ( client >= 0 && client < MAX_CLIENTS ) {
 					player = gameLocal.GetClient( client );
 				}
 			}
 
 			sdPlayerVote* vote = AllocVote( index );
+			if ( vote == NULL ) {
+				break;
+			}
 
 			int toolTipIndex = msg.ReadBits( idMath::BitsForInteger( gameLocal.declToolTipType.Num() ) );
-			const sdDeclToolTip* toolTip = toolTipIndex ? gameLocal.declToolTipType[ toolTipIndex - 1 ] : NULL;
+			const sdDeclToolTip* toolTip = toolTipIndex > 0 && toolTipIndex <= gameLocal.declToolTipType.Num() ? gameLocal.declToolTipType[ toolTipIndex - 1 ] : NULL;
 			vote->SetText( toolTip );
 
+			// a vote's text takes a handful of parameters
 			int textCount = msg.ReadLong();
+			if ( textCount < 0 || textCount > MAX_VOTE_TEXT_PARMS ) {
+				textCount = 0;
+			}
 			for ( int i = 0; i < textCount; i++ ) {
 				if ( !msg.ReadBool() ) {
 					vote->AddTextParm( declHolder.declLocStrType.SafeIndex( msg.ReadLong() ) );
@@ -1435,11 +1445,16 @@ void sdVoteManagerLocal::ClientReadNetworkMessage( const idBitMsg& msg ) {
 		}
 		case VM_FREE: {
 			int index = msg.ReadBits( idMath::BitsForInteger( MAX_VOTES ) );
-			FreeVote( index );
+			if ( index >= 0 && index < MAX_VOTES ) {
+				FreeVote( index );
+			}
 			break;
 		}
 		case VM_VOTE: {
 			int index = msg.ReadBits( idMath::BitsForInteger( MAX_VOTES ) );
+			if ( index < 0 || index >= MAX_VOTES ) {
+				break;
+			}
 			sdPlayerVote* v = votes[ index ];
 			if ( v ) {
 				v->Vote( msg.ReadBool() );
@@ -1458,6 +1473,9 @@ void sdVoteManagerLocal::ServerReadNetworkMessage( idPlayer* client, const idBit
 	int index = msg.ReadBits( idMath::BitsForInteger( MAX_VOTES ) );
 	int endTime = msg.ReadLong();
 	bool result = msg.ReadBool();
+	if ( index < 0 || index >= MAX_VOTES ) {
+		return;
+	}
 
 	sdPlayerVote* v = votes[ index ];
 	if ( !v ) {

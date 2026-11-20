@@ -446,15 +446,27 @@ bool sdUserGroupManagerLocal::Login( idPlayer* player, const char* password ) {
 	}
 	nextLoginTime[ player->entityNumber ] = now + 5; // Gordon: limit password brute forcing
 
+	// and per address, so other slots or a reconnect do not get fresh guesses
+	clientNetworkAddress_t netAddr;
+	networkSystem->ServerGetClientNetworkInfo( player->entityNumber, netAddr );
+	const unsigned int address = *reinterpret_cast< const unsigned int* >( netAddr.ip );
+	const int nowMsec = sys->Milliseconds();
+	if ( !LoginThrottle().Allowed( address, nowMsec ) ) {
+		return false;
+	}
+
 	for ( int i = 0; i < userGroups.Num(); i++ ) {
 		if ( !userGroups[ i ].CheckPassword( password ) ) {
 			continue;
 		}
 
+		LoginThrottle().Succeeded( address );
 		player->SetUserGroup( i );
 		return true;
 	}
 
+	LoginThrottle().Failed( address, nowMsec );
+	gameLocal.Printf( "admin login failed for client %d\n", player->entityNumber );
 	return false;
 }
 

@@ -36,13 +36,15 @@ enum userPermissionFlags_t {
 	PF_NUM_FLAGS,
 };
 
+#include "LoginThrottle.h"
+
 class sdUserGroup {
 public:
 									sdUserGroup( void );
 
 	bool							HasPermission( userPermissionFlags_t flag ) const { return superUser || ( flags.Get( flag ) != 0 ); }
 	const char*						GetName( void ) const { return name; }
-	bool							CheckPassword( const char* pass ) const { return password.Length() > 0 && idStr::Icmp( password, pass ) == 0; }
+	bool							CheckPassword( const char* pass ) const { return password.Length() > 0 && sdLoginThrottle::PasswordsMatch( password.c_str(), pass ); }
 
 	void							GivePermission( userPermissionFlags_t flag ) { flags.Set( flag ); }
 	void							SetName( const char* _name ) { name = _name; }
