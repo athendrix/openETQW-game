@@ -78,6 +78,8 @@ const int GAMEPAD_SIDEARM_BANK = 1;
 const int GAMEPAD_PRIMARY_BANK = 2;
 // the binoculars (_weapon6): Destiny's heavy weapon here
 const int GAMEPAD_BINOCS_BANK = 6;
+// how long something other than a gun may sit ready in hand before the gun comes back
+const int GAMEPAD_RETURN_MSEC = 1000;
 // grenade and melee pressed this close together are the super (the item)
 const int GAMEPAD_CHORD_MSEC = 100;
 
@@ -176,6 +178,8 @@ void sdGamepadControls::Reset( void ) {
 	memset( &meleeButton, 0, sizeof( meleeButton ) );
 	superChord = false;
 	heavyPending = false;
+	lastGun = -1;
+	offGunSince = 0;
 	padSprint = false;
 	padSprintHeld = false;
 	tapHoldMode = TH_RELOAD_USE;
@@ -754,6 +758,47 @@ void sdGamepadControls::UpdateSticky( idPlayer* player, int now ) {
 	}
 }
 
+/*
+================
+sdGamepadControls::UpdateReturnToGun
+
+in_gunsOnly: the player is only on a gun unless a button holds something else. Retail
+still puts other things in hand by itself (using a damaged vehicle brings out the
+pliers, an objective the hacking tool, running out of grenades picks a weapon); once
+nothing holds it (no quick action, deploy toggle, remote view or heavy; fire and use
+let go) and it has sat ready for GAMEPAD_RETURN_MSEC, the last gun comes back.
+================
+*/
+void sdGamepadControls::UpdateReturnToGun( idPlayer* player, usercmd_t& cmd, int now ) {
+	sdInventory& inventory = player->GetInventory();
+	const int bank = inventory.GetCurrentSlot();
+	if ( bank == GAMEPAD_PRIMARY_BANK || bank == GAMEPAD_SIDEARM_BANK ) {
+		lastGun = inventory.GetCurrentWeapon();
+		offGunSince = 0;
+		return;
+	}
+	idWeapon* weapon = player->GetWeapon();
+	const bool held = !in_gunsOnly.GetBool() || quickState != QG_IDLE || deployWeapon >= 0 || stickyWeapon >= 0 ||
+		bank == GAMEPAD_BINOCS_BANK || bank == -1 || player->GetRemoteCamera() != NULL ||
+		cmd.buttons.btn.attack || cmd.buttons.btn.altAttack || cmd.buttons.btn.activate ||
+		inventory.IsSwitchActive() || weapon == NULL || !weapon->IsReady() || lastGun < 0;
+	if ( held ) {
+		offGunSince = 0;
+		return;
+	}
+	if ( offGunSince == 0 ) {
+		offGunSince = now;
+		return;
+	}
+	if ( now - offGunSince >= GAMEPAD_RETURN_MSEC ) {
+		offGunSince = 0;
+		if ( in_quickDebug.GetBool() ) {
+			gameLocal.Printf( "back to the gun from bank %d\n", bank );
+		}
+		QuickSwitchTo( player, lastGun );
+	}
+}
+
 // Y held: the binoculars, Destiny's heavy weapon (Field Ops and Oppressor aim their
 // artillery with them); it stays in hand like a gun until the next swap
 void sdGamepadControls::SelectHeavy( idPlayer* player ) {
@@ -843,6 +888,44 @@ bool sdGamepadControls::SelectGun( idPlayer* player, int bank ) {
 	}
 	QuickSwitchTo( player, BankWeapon( player, bank ) );
 	return true;
+}
+
+/*
+================
+sdGamepadControls::DestinyCommandFor
+
+The action that does what a retail command did, for the key names tooltips and GUIs
+show ("press [key] to throw a grenade"): retail's weapon banks are reached by the
+Destiny style buttons now, and alt-fire by the aim button. NULL when it is unchanged.
+================
+*/
+const char* sdGamepadControls::DestinyCommandFor( const char* command ) {
+	if ( command == NULL || !in_gunsOnly.GetBool() ) {
+		return NULL;
+	}
+	static const char* const map[][ 2 ] = {
+		{ "_weapon0",					"_quickmelee" },
+		{ "_weapon1",					"_weapon1" },
+		{ "_weapon2",					"_weapon2" },
+		{ "_weapon3",					"_quickgrenade" },
+		{ "_weapon4",					"_quicktool" },
+		{ "_weapon5",					"_quickitem" },
+		{ "_weapon6",					"_heavy" },
+		{ "useweapon weapon_binocs",	"_heavy" },
+		{ "useweapon weapon_tool1",		"_quicktool" },
+		{ "useweapon weapon_tool2",		"_quicktool" },
+		{ "useweapon weapon_item1",		"_quickitem" },
+		{ "useweapon weapon_item2",		"_quickitem" },
+		{ "_altattack",					"_zoomhold" },
+		{ "_sprint",					"_padsprint" },
+		{ "_usevehicle",				"_interact" },
+	};
+	for ( int i = 0; i < static_cast< int >( sizeof( map ) / sizeof( map[ 0 ] ) ); i++ ) {
+		if ( idStr::Icmp( command, map[ i ][ 0 ] ) == 0 ) {
+			return map[ i ][ 1 ];
+		}
+	}
+	return NULL;
 }
 
 bool sdGamepadControls::GunsOnly( void ) const {
@@ -1066,6 +1149,7 @@ void sdGamepadControls::UsercommandCallback( idPlayer* player, usercmd_t& cmd ) 
 	UpdateClassAbility( player, now );
 	UpdateQuick( player, cmd, now );
 	UpdateSticky( player, now );
+	UpdateReturnToGun( player, cmd, now );
 	UpdateZoomHold( player, cmd, now );
 }
 
@@ -1089,6 +1173,12 @@ void sdGamepadControls::UpdateZoomHold( idPlayer* player, usercmd_t& cmd, int no
 	}
 	idWeapon* weapon = player->GetWeapon();
 	if ( !WeaponHasSights( weapon ) ) {
+		// tools and items: the aim button is their alt-fire, held (rotate a deployable,
+		// look through the third eye, throw underhand)
+		if ( zoomWanted && weapon != NULL && player->GetInventory().GetCurrentSlot() != GAMEPAD_PRIMARY_BANK &&
+			player->GetInventory().GetCurrentSlot() != GAMEPAD_SIDEARM_BANK ) {
+			cmd.buttons.btn.altAttack = true;
+		}
 		return;
 	}
 	const bool zoomed = WeaponIsZoomed( player, weapon );

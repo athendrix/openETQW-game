@@ -250,7 +250,11 @@ void idGameLocal::CreateKeyBindingList( sdUIList* list ) {
 	idWStr text;
 	for( int i = 0; i < bind->GetKeys().GetNumKeyVals(); i++ ) {
 		const idKeyValue* kv = bind->GetKeys().GetKeyVal( i );
-		int item = sdUIList::InsertItem( list, va( L"<loc = '%hs'>", kv->GetKey().c_str() ), -1, 0 );
+		// a '#' label is plain text (decls/DestinyKeyBindings.h), else a localized string
+		const char* label = kv->GetKey().c_str();
+		int item = label[ 0 ] == '#' ?
+			sdUIList::InsertItem( list, va( L"%hs", label + 1 ), -1, 0 ) :
+			sdUIList::InsertItem( list, va( L"<loc = '%hs'>", label ), -1, 0 );
 
 		int numKeys = 0;
 		keyInputManager->KeysFromBinding( gameLocal.GetDefaultBindContext(), kv->GetValue(), numKeys, NULL );

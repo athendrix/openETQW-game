@@ -5,6 +5,8 @@
 #include "precompiled.h"
 #pragma hdrstop
 
+#include "../GamepadControls.h"
+
 #include "DeclToolTip.h"
 #include "../../framework/KeyInput.h"
 #include "../../framework/DeclParseHelper.h"
@@ -562,6 +564,7 @@ const wchar_t* sdDeclToolTipOptionKey::GetText( sdToolTipParms* formatting ) con
 	if ( key.Length() <= 0 ) {
 		return L"";
 	}
-	keyInputManager->KeysFromBinding( gameLocal.GetDefaultBindContext(), key, true, cache );
+	const char* destiny = sdGamepadControls::DestinyCommandFor( key.c_str() );
+	keyInputManager->KeysFromBinding( gameLocal.GetDefaultBindContext(), destiny != NULL ? destiny : key.c_str(), true, cache );
 	return cache.c_str();
 }

@@ -5,6 +5,8 @@
 #include "../precompiled.h"
 #pragma hdrstop
 
+#include "../GamepadControls.h"
+
 #if defined( _DEBUG ) && !defined( ID_REDIRECT_NEWDELETE )
 #define new DEBUG_NEW
 #undef THIS_FILE
@@ -711,7 +713,8 @@ void sdUserInterfaceLocal::Script_GetKeyBind( sdUIFunctionStack& stack ) {
 	}
 
 	idWStr keyName;
-	keyInputManager->KeysFromBinding( context, str, true, keyName );
+	const char* destiny = sdGamepadControls::DestinyCommandFor( str.c_str() );
+	keyInputManager->KeysFromBinding( context, destiny != NULL ? destiny : str.c_str(), true, keyName );
 
 	stack.Push( keyName.c_str() );
 }
@@ -1836,7 +1839,9 @@ void sdUserInterfaceLocal::Script_GetLoadTip( sdUIFunctionStack& stack ) {
 			}
 
 			idWStr key;
-			keyInputManager->KeysFromBinding( gameLocal.GetDefaultBindContext(), va( "%ls", keyBuffer.c_str() ), true, key );
+			const idStr command = va( "%ls", keyBuffer.c_str() );
+			const char* destiny = sdGamepadControls::DestinyCommandFor( command.c_str() );
+			keyInputManager->KeysFromBinding( gameLocal.GetDefaultBindContext(), destiny != NULL ? destiny : command.c_str(), true, key );
 
 			const int keyEnd = index;
 			index = keyStart;

@@ -81,6 +81,8 @@ public:
 	// local player; true when it took the request
 	bool						SelectGun( idPlayer* player, int bank );
 	bool						GunsOnly( void ) const;
+	// the Destiny style action standing in for a retail command in key names, or NULL
+	static const char*			DestinyCommandFor( const char* command );
 
 	// idPlayer::UsercommandCallback, for the local player
 	void						UsercommandCallback( idPlayer* player, usercmd_t& cmd );
@@ -113,6 +115,7 @@ private:
 	void						UpdateClassAbility( idPlayer* player, int now );
 	void						UpdateSticky( idPlayer* player, int now );
 	void						SelectHeavy( idPlayer* player );
+	void						UpdateReturnToGun( idPlayer* player, usercmd_t& cmd, int now );
 
 	struct chordButton_t {
 		bool					down;
@@ -178,6 +181,10 @@ private:
 	chordButton_t				meleeButton;
 	bool						superChord;
 	bool						heavyPending;
+
+	// back to the gun when nothing holds anything else
+	int							lastGun;
+	int							offGunSince;
 
 	// an item kept in hand for a remote view (third eye, flyer drone)
 	int							stickyWeapon;

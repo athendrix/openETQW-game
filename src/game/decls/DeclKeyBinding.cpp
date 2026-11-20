@@ -7,6 +7,7 @@
 
 #include "DeclKeyBinding.h"
 #include "../../framework/DeclParseHelper.h"
+#include "DestinyKeyBindings.h"
 
 /*
 ===============================================================================
@@ -83,6 +84,15 @@ bool sdDeclKeyBinding::Parse( const char *text, const int textLength ) {
 			}
 			title = declHolder.declLocStrType.LocalFind( token );
 			continue;
+		}
+	}
+
+	// the Destiny 2 style controls replace retail's lists (DestinyKeyBindings.h)
+	const destinyKeyBinding_t* destiny = DestinyKeyBindingsFor( GetName() );
+	if ( destiny != NULL ) {
+		keys.Clear();
+		for ( int i = 0; destiny[ i ].label != NULL; i++ ) {
+			keys.Set( destiny[ i ].label, destiny[ i ].command );
 		}
 	}
 	
