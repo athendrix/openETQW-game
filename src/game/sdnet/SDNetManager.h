@@ -220,6 +220,8 @@ public:
 
 	sdNetSession*					GetSession( float fSource, int index );
 	void							UpdateDefaultServerSource();
+	void							ApplyMenuOverrides();
+	static int						GuiServerSource( int source );
 	static idStr					FavoriteIdentity( const char* value );
 	static bool						IsFavoriteSession( const idDict& properties, const sdNetSession& netSession );
 	const sdNetSession*				FindSessionByAddress( const char* address ) const;

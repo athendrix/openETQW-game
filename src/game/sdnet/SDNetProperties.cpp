@@ -615,7 +615,10 @@ void sdNetProperties::UpdateProperties() {
 		hasActiveUser = true;
 
 		activeUserState = activeUser->GetState();
-		activeUsername = activeUser->GetUsername();
+		// offline there is one account, so the menu's "Profile:" shows the player's name
+		// (ui_name, set in the options) rather than the account's
+		const char* playerName = cvarSystem->GetCVarString( "ui_name" );
+		activeUsername = playerName[ 0 ] != '\0' ? playerName : activeUser->GetUsername();
 
 		const sdNetAccount& account = activeUser->GetAccount();
 

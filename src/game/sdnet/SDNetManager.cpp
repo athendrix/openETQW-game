@@ -32,6 +32,7 @@ static char THIS_FILE[] = __FILE__;
 #include "../rules/GameRules.h"
 
 #include "../guis/UIList.h"
+#include "../guis/UIWindow.h"
 
 #include "../../framework/Licensee.h"
 
@@ -1223,6 +1224,7 @@ sdNetManager::RunFrame
 void sdNetManager::RunFrame() {
 	properties.UpdateProperties();
 	UpdateDefaultServerSource();
+	ApplyMenuOverrides();
 
 	// task processing
 
@@ -1252,6 +1254,7 @@ void sdNetManager::RunFrame() {
 
 	if ( findServersTask ) {
 		properties.SetNumAvailableDWServers( sessions.Num() );
+		properties.SetNumAvailableLANRepeaters( sessions.Num() );	// the menu's Internet entry (GuiServerSource)
 
 		if ( findServersTask->GetState() == sdNetTask::TS_DONE ) {
 			networkService->FreeTask( findServersTask );
@@ -2751,6 +2754,7 @@ sdNetManager::Script_FindServers
 void sdNetManager::Script_FindServers( sdUIFunctionStack& stack ) {
 	int iSource;
 	stack.Pop( iSource );
+	iSource = GuiServerSource( iSource );
 
 	findServerSource_e source;
 	if( !sdIntToContinuousEnum< findServerSource_e >( iSource, FS_MIN, FS_MAX, source ) ) {
@@ -2912,6 +2916,7 @@ sdNetManager::Script_UpdateHotServers
 void sdNetManager::Script_UpdateHotServers( sdUIFunctionStack& stack ) {
 	int iSource;
 	stack.Pop( iSource );
+	iSource = GuiServerSource( iSource );
 
 	findServerSource_e source;
 	if( !sdIntToContinuousEnum< findServerSource_e >( iSource, FS_MIN, FS_MAX, source ) ) {
@@ -2942,6 +2947,7 @@ sdNetManager::Script_RefreshHotServers
 void sdNetManager::Script_RefreshHotServers( sdUIFunctionStack& stack ) {
 	int iSource;
 	stack.Pop( iSource );
+	iSource = GuiServerSource( iSource );
 
 	idStr ignore;
 	stack.Pop( ignore );
@@ -3051,6 +3057,7 @@ sdNetManager::Script_RefreshServer
 void sdNetManager::Script_RefreshServer( sdUIFunctionStack& stack ) {
 	int iSource;
 	stack.Pop( iSource );
+	iSource = GuiServerSource( iSource );
 
 	int sessionIndex;
 	stack.Pop( sessionIndex );
@@ -3786,7 +3793,7 @@ sdNetManager::GetSession
 ============
 */
 sdNetSession* sdNetManager::GetSession( float fSource, int index ) {
-	int iSource = idMath::Ftoi( fSource );
+	int iSource = GuiServerSource( idMath::Ftoi( fSource ) );
 	if( iSource < sdNetManager::FS_LAN || iSource >= sdNetManager::FS_MAX ) {
 		gameLocal.Error( "GetSession: source '%i' out of range", iSource );
 		return NULL;
@@ -5279,6 +5286,7 @@ sdNetManager::Script_RefreshCurrentServers
 void sdNetManager::Script_RefreshCurrentServers( sdUIFunctionStack& stack ) {
 	int iSource;
 	stack.Pop( iSource );
+	iSource = GuiServerSource( iSource );
 
 	findServerSource_e source;
 	if( !sdIntToContinuousEnum< findServerSource_e >( iSource, FS_MIN, FS_MAX, source ) ) {
@@ -5389,6 +5397,7 @@ sdNetManager::Script_StopFindingServers
 void sdNetManager::Script_StopFindingServers( sdUIFunctionStack& stack ) {
 	int iSource;
 	stack.Pop( iSource );
+	iSource = GuiServerSource( iSource );
 
 	findServerSource_e source = static_cast< findServerSource_e >( iSource );
 	if( !sdIntToContinuousEnum< findServerSource_e >( iSource, FS_MIN, FS_MAX, source ) ) {
@@ -5398,6 +5407,79 @@ void sdNetManager::Script_StopFindingServers( sdUIFunctionStack& stack ) {
 	StopFindingServers( source );
 }
 
+
+/*
+============
+sdNetManager::ApplyMenuOverrides
+
+Retail main menu (guis/mainmenu) entries that mean nothing without an online account
+or VoIP are hidden: the Play Online and Persistent Stats tabs, and the Voice settings
+tab. Each window is hidden and folded to nothing, so the tabs after it, which the menu
+places one after another (x = the previous tab's x + width + 8), close the gap. Kept
+up every frame: the menu sizes its tabs to their text and re-places them when the
+screen changes. The renamed tabs are in openETQW src/decllib/LocStrOverrides.h.
+============
+*/
+namespace {
+
+void HideMenuWindow( sdUserInterfaceLocal* ui, const char* name, float width ) {
+	sdUIObject* window = ui->GetWindow( name );
+	if ( window == NULL ) {
+		return;
+	}
+	sdUserInterfaceScope& scope = window->GetScope();
+	if ( sdProperties::sdProperty* visible = scope.GetProperty( "visible", sdProperties::PT_FLOAT ) ) {
+		if ( *visible->value.floatValue != 0.0f ) {
+			*visible->value.floatValue = 0.0f;
+		}
+	}
+	if ( sdProperties::sdProperty* flags = scope.GetProperty( "flags", sdProperties::PT_FLOAT ) ) {
+		const int value = idMath::Ftoi( *flags->value.floatValue );
+		const int autoSize = sdUIWindow::WF_AUTO_SIZE_WIDTH;
+		if ( ( value & autoSize ) != 0 ) {
+			*flags->value.floatValue = static_cast< float >( value & ~autoSize );
+		}
+	}
+	if ( sdProperties::sdProperty* rect = scope.GetProperty( "rect", sdProperties::PT_VEC4 ) ) {
+		idVec4 value = *rect->value.vec4Value;
+		if ( value.z != width ) {
+			value.z = width;
+			*rect->value.vec4Value = value;
+		}
+	}
+}
+
+} // namespace
+
+void sdNetManager::ApplyMenuOverrides() {
+	if ( networkSystem->IsDedicated() ) {
+		return;
+	}
+	sdUserInterfaceLocal* ui = gameLocal.GetUserInterface( gameLocal.GetMainMenuGui() );
+	if ( ui == NULL ) {
+		return;
+	}
+	// a main tab folds to -8, so the next one lands where it was (its x + width + 8)
+	HideMenuWindow( ui, "tabMain_Play", -8.0f );
+	HideMenuWindow( ui, "tabMain_PlayerStats", -8.0f );
+	// a settings tab folds to 0 (the next one starts at its x + width)
+	HideMenuWindow( ui, "tabpSettings_Voice", 0.0f );
+}
+
+/*
+============
+sdNetManager::GuiServerSource
+
+Retail's join dialog lists Internet (FS_INTERNET) only to an account signed in to the
+master server, and LAN TV (FS_LAN_REPEATER) whenever LAN play is allowed. There is no
+master server and no ETQW TV here, so the LAN TV entry is the Internet list (renamed
+"Internet", openETQW src/decllib/LocStrOverrides.h): every source the menu passes in is
+read through this.
+============
+*/
+int sdNetManager::GuiServerSource( int source ) {
+	return source == FS_LAN_REPEATER ? FS_INTERNET : source;
+}
 
 /*
 ============
@@ -5441,7 +5523,8 @@ void sdNetManager::UpdateDefaultServerSource() {
 	sdProperties::sdProperty* allowLAN = ui->GetState().GetProperty( "allowLAN", sdProperties::PT_FLOAT );
 	const bool lan = cvarSystem->GetCVarInteger( "net_lanServersFound" ) > 0 && ( allowLAN == NULL || *allowLAN->value.floatValue != 0.0f );
 
-	const float wanted = static_cast< float >( favorites ? FS_FAVORITES : ( lan ? FS_LAN : FS_INTERNET ) );
+	// Internet is the menu's LAN TV entry (GuiServerSource)
+	const float wanted = static_cast< float >( favorites ? FS_FAVORITES : ( lan ? FS_LAN : FS_LAN_REPEATER ) );
 	if ( *mode->value.floatValue != wanted ) {
 		*mode->value.floatValue = wanted;
 	}
@@ -5663,6 +5746,7 @@ sdNetManager::Script_GetPlayerCount
 void sdNetManager::Script_GetPlayerCount( sdUIFunctionStack& stack ) {
 	int iSource;
 	stack.Pop( iSource );
+	iSource = GuiServerSource( iSource );
 
 	findServerSource_e source;
 	if( !sdIntToContinuousEnum< findServerSource_e >( iSource, FS_MIN, FS_MAX, source ) ) {
@@ -6189,6 +6273,7 @@ sdNetManager::Script_GetNumInterestedInServer
 void sdNetManager::Script_GetNumInterestedInServer( sdUIFunctionStack& stack ) {
 	int iSource;
 	stack.Pop( iSource );
+	iSource = GuiServerSource( iSource );
 
 	idStr address;
 	stack.Pop( address );
@@ -6227,6 +6312,7 @@ sdNetManager::Script_JoinBestServer
 void sdNetManager::Script_JoinBestServer( sdUIFunctionStack& stack ) {
 	int iSource;
 	stack.Pop( iSource );
+	iSource = GuiServerSource( iSource );
 
 	findServerSource_e source;
 	if( !sdIntToContinuousEnum< findServerSource_e >( iSource, FS_MIN, FS_MAX, source ) ) {
@@ -6257,6 +6343,7 @@ sdNetManager::Script_GetNumHotServers
 void sdNetManager::Script_GetNumHotServers( sdUIFunctionStack& stack ) {
 	int iSource;
 	stack.Pop( iSource );
+	iSource = GuiServerSource( iSource );
 
 	findServerSource_e source;
 	if( !sdIntToContinuousEnum< findServerSource_e >( iSource, FS_MIN, FS_MAX, source ) ) {
