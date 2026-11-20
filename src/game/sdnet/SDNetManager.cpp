@@ -2757,11 +2757,9 @@ void sdNetManager::Script_FindServers( sdUIFunctionStack& stack ) {
 		return;
 	}
 
-	if( source == FS_INTERNET && networkService->GetState() != sdNetService::SS_ONLINE ) {
-		gameLocal.Warning( "FindServers: cannot search for internet servers while offline\n", iSource );
-		stack.Push( false );
-		return;
-	}
+	// OpenETQW: there is no online service; the engine's session manager fills the
+	// Internet tab from the player's server list (net_serverList), so it is searched
+	// offline too
 
 	sdNetTask* task = NULL;
 	idList< sdNetSession* >* netSessions = NULL;
