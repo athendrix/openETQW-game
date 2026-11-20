@@ -310,22 +310,38 @@ typedef enum {
 	NA_BAD,					// an address lookup failed
 	NA_LOOPBACK,
 	NA_BROADCAST,
-	NA_IP
+	NA_IP,
+	NA_IP6
 } netadrtype_t;
 
 struct netadr_t {
 	netadrtype_t	type;
-	unsigned char	ip[4];
+	unsigned char	ip[4];		// IPv4; for NA_IP6 a key of the address's /64 in 240.0.0.0/4, for code that keys clients on ip (bans, throttles)
 	unsigned short	port;
+	unsigned char	ip6[16];	// NA_IP6
+	unsigned int	scope;		// NA_IP6: the interface of a link-local address
 };
 
+ID_INLINE bool NetAdr_IsIP( const netadr_t& a ) {
+	return a.type == NA_IP || a.type == NA_IP6;
+}
+
 ID_INLINE bool operator==( const netadr_t& lhs, const netadr_t& rhs ) {
-	return ( ( lhs.type == rhs.type ) &&
-			 ( lhs.ip[ 0 ] == rhs.ip[ 0 ] ) &&
+	if ( lhs.type != rhs.type || lhs.port != rhs.port ) {
+		return false;
+	}
+	if ( lhs.type == NA_IP6 ) {
+		for ( int i = 0; i < 16; i++ ) {
+			if ( lhs.ip6[ i ] != rhs.ip6[ i ] ) {
+				return false;
+			}
+		}
+		return lhs.scope == rhs.scope;
+	}
+	return ( ( lhs.ip[ 0 ] == rhs.ip[ 0 ] ) &&
 			 ( lhs.ip[ 1 ] == rhs.ip[ 1 ] ) &&
 			 ( lhs.ip[ 2 ] == rhs.ip[ 2 ] ) &&
-			 ( lhs.ip[ 3 ] == rhs.ip[ 3 ] ) &&
-			 ( lhs.port == rhs.port ) );
+			 ( lhs.ip[ 3 ] == rhs.ip[ 3 ] ) );
 }
 
 #define	PORT_ANY			-1
@@ -356,7 +372,8 @@ public:
 
 private:
 	netadr_t	bound_to;		// interface and port
-	int			netSocket;		// OS specific socket
+	int			netSocket;		// OS specific socket: IPv4
+	int			netSocket6;		// IPv6 (only), on the same port when it is free; "none" as for netSocket
 
 	bool		silent;			// don't emit anything for a while
 };
