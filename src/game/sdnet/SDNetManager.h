@@ -219,6 +219,7 @@ public:
 	void							PerformCommand( const idCmdArgs& cmd );
 
 	sdNetSession*					GetSession( float fSource, int index );
+	void							UpdateDefaultServerSource();
 	static idStr					FavoriteIdentity( const char* value );
 	static bool						IsFavoriteSession( const idDict& properties, const sdNetSession& netSession );
 	const sdNetSession*				FindSessionByAddress( const char* address ) const;
@@ -473,6 +474,7 @@ private:
 	sdNetTask*							findLANRepeatersTask;
 	sdNetTask*							findHistoryServersTask;
 	sdNetTask*							findFavoriteServersTask;
+	bool								defaultSourceChosen;	// UpdateDefaultServerSource is done
 	sdNetTask*							refreshServerTask;
 	sdNetTask*							initFriendsTask;
 	sdNetTask*							initTeamsTask;

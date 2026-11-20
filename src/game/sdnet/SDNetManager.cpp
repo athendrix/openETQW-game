@@ -303,6 +303,7 @@ sdNetManager::sdNetManager() :
 	findLANRepeatersTask( NULL ),
 	findHistoryServersTask( NULL ),
 	findFavoriteServersTask( NULL ),
+	defaultSourceChosen( false ),
 	findLANServersTask( NULL ),
 	refreshHotServerTask( NULL ),
 	gameSession( NULL ),
@@ -1221,6 +1222,7 @@ sdNetManager::RunFrame
 */
 void sdNetManager::RunFrame() {
 	properties.UpdateProperties();
+	UpdateDefaultServerSource();
 
 	// task processing
 
@@ -5396,6 +5398,54 @@ void sdNetManager::Script_StopFindingServers( sdUIFunctionStack& stack ) {
 	StopFindingServers( source );
 }
 
+
+/*
+============
+sdNetManager::UpdateDefaultServerSource
+
+Which list the server browser opens on: retail's main menu keeps it in gui.serverMode
+(Internet to start with), which its join dialog's source list shows when it opens. Until
+the dialog first opens, it is set here to Favorites when the player has saved any, else
+LAN when a server on the LAN has answered (the engine looks from the first frame:
+net_lanServersFound), else Internet. After that the player's choice stands, as in retail.
+The menu's Play Online and Play LAN tabs still switch between Internet and LAN.
+============
+*/
+void sdNetManager::UpdateDefaultServerSource() {
+	if ( defaultSourceChosen || networkSystem->IsDedicated() ) {
+		return;
+	}
+	sdUserInterfaceLocal* ui = gameLocal.GetUserInterface( gameLocal.GetMainMenuGui() );
+	if ( ui == NULL ) {
+		return;
+	}
+	if ( sdUIObject* dialog = ui->GetWindow( "dlgJoinGame" ) ) {
+		sdProperties::sdProperty* visible = dialog->GetScope().GetProperty( "visible", sdProperties::PT_FLOAT );
+		if ( visible != NULL && *visible->value.floatValue != 0.0f ) {
+			defaultSourceChosen = true;
+			return;
+		}
+	}
+	sdProperties::sdProperty* mode = ui->GetState().GetProperty( "serverMode", sdProperties::PT_FLOAT );
+	if ( mode == NULL ) {
+		return;
+	}
+
+	bool favorites = false;
+	if ( sdNetUser* user = networkService->GetActiveUser() ) {
+		const idDict& profile = user->GetProfile().GetProperties();
+		for ( const idKeyValue* kv = profile.MatchPrefix( "favorite_" ); kv != NULL && !favorites; kv = profile.MatchPrefix( "favorite_", kv ) ) {
+			favorites = atoi( kv->GetValue().c_str() ) != 0;
+		}
+	}
+	sdProperties::sdProperty* allowLAN = ui->GetState().GetProperty( "allowLAN", sdProperties::PT_FLOAT );
+	const bool lan = cvarSystem->GetCVarInteger( "net_lanServersFound" ) > 0 && ( allowLAN == NULL || *allowLAN->value.floatValue != 0.0f );
+
+	const float wanted = static_cast< float >( favorites ? FS_FAVORITES : ( lan ? FS_LAN : FS_INTERNET ) );
+	if ( *mode->value.floatValue != wanted ) {
+		*mode->value.floatValue = wanted;
+	}
+}
 
 /*
 ============
