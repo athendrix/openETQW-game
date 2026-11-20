@@ -452,11 +452,6 @@ int idBitMsg::ReadBits( int numBits ) const {
 		idLib::common->FatalError( "idBitMsg::ReadBits: bad numBits %i", numBits );
 	}
 
-	// check for overflow
-	if ( ( ( ( curSize - readCount + 1 ) << 3 ) - readBit ) < numBits ) {
-		return -1;
-	}
-
 	value = 0;
 	valueBits = 0;
 
@@ -465,6 +460,11 @@ int idBitMsg::ReadBits( int numBits ) const {
 		sgn = true;
 	} else {
 		sgn = false;
+	}
+
+	// check for overflow: the bits left are the message's bits less those read
+	if ( numBits > ( curSize << 3 ) - GetNumBitsRead() ) {
+		return -1;
 	}
 
 	while ( valueBits < numBits ) {
@@ -570,11 +570,15 @@ int idBitMsg::ReadData( void *data, int length ) const {
 	ReadByteAlign();
 	cnt = readCount;
 
+	if ( length <= 0 ) {
+		return 0;
+	}
 	if ( readCount + length > curSize ) {
-		if ( data ) {
-			memcpy( data, readData + readCount, GetRemainingData() );
+		const int remaining = curSize - readCount;
+		if ( data && remaining > 0 ) {
+			memcpy( data, readData + readCount, remaining );
 		}
-		readCount = curSize;
+		readCount = Max( readCount, curSize );
 	} else {
 		if ( data ) {
 			memcpy( data, readData + readCount, length );
