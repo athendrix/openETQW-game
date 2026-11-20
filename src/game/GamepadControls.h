@@ -24,9 +24,12 @@ Gamepad play in the style of modern console shooters (Destiny 2 is the reference
   - Quick tool and item (_quicktool, _quickitem): select the tools (_weapon4) or items
     (_weapon5) bank, hold fire while the button is held (hack, arm, place, throw a pack),
     then switch back, so the player is only ever on a gun unless a button is held.
-    Each quick action finishes the switch itself: the retail switch waits for the
-    weapon menu, and without it the weapon came up seconds later, unused.
-    in_quickDebug prints what they do.
+    Each quick action switches itself, without the weapon menu and (where the game
+    runs here) without the put-away animation (QuickSwitchTo). in_quickDebug prints
+    what they do.
+  - Guns only (in_gunsOnly, on): the weapon keys, the wheel and next/previous weapon
+    only select the sidearm and the primary; next/previous swaps between the two.
+    Everything else is in hand only while its own button is held.
   - Pad sprint (_padsprint): a press starts sprinting, which lasts until the player stops
     moving forward (the left stick comes back, or the forward key is let go) or fires
     or zooms. In a vehicle it is boost, held.
@@ -39,7 +42,7 @@ Gamepad play in the style of modern console shooters (Destiny 2 is the reference
     car and hovertank input modes in InputMode.cpp, in_vehicle_triggerThrottle).
   - _crouchprone: a tap crouches and stays crouched until the next tap, a jump or
     sprint; held, the player goes prone (a tap stands up again).
-  - _swapweapon: a tap selects the next weapon, a hold the items bank (_weapon5).
+  - _swapweapon: a tap swaps guns, a hold uses the item (_quickitem) while held.
   - _interact (keyboard E, Destiny style): use at once and held; in a vehicle a tap
     switches seat and a hold gets out.
 
@@ -73,6 +76,11 @@ public:
 	void						NoteTriggerDriving( void );
 	bool						TriggerDriving( void ) const;
 
+	// in_gunsOnly: idPlayer::SelectWeapon (a bank) and NextWeapon/PrevWeapon (-1) for the
+	// local player; true when it took the request
+	bool						SelectGun( idPlayer* player, int bank );
+	bool						GunsOnly( void ) const;
+
 	// idPlayer::UsercommandCallback, for the local player
 	void						UsercommandCallback( idPlayer* player, usercmd_t& cmd );
 
@@ -93,7 +101,8 @@ private:
 	void						UpdateZoomHold( idPlayer* player, usercmd_t& cmd, int now );
 	void						StartQuick( int bank, bool melee, bool down );
 	void						UpdateQuick( idPlayer* player, usercmd_t& cmd, int now );
-	static void					FinishSwitch( idPlayer* player );
+	static void					QuickSwitchTo( idPlayer* player, int weaponIndex );
+	static int					BankWeapon( idPlayer* player, int bank );
 	void						SetQuickState( int state, const char* why );
 
 	enum quickState_t {

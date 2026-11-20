@@ -52,6 +52,7 @@ idCVar in_aim_assistDebug( "in_aim_assistDebug", "0", CVAR_GAME | CVAR_BOOL, "ai
 idCVar in_padHoldTime( "in_padHoldTime", "250", CVAR_GAME | CVAR_ARCHIVE | CVAR_INTEGER | CVAR_PROFILE, "_reloaduse: milliseconds a press must last to use instead of reload", 100, 1000 );
 
 // pad sprint
+idCVar in_gunsOnly( "in_gunsOnly", "1", CVAR_GAME | CVAR_ARCHIVE | CVAR_BOOL | CVAR_PROFILE, "weapon keys, the wheel and next/previous weapon only select the guns (sidearm and primary); grenades, melee, tools and items are used by their own buttons" );
 idCVar in_quickDebug( "in_quickDebug", "0", CVAR_GAME | CVAR_BOOL, "print what the quick grenade, melee, tool and item actions do" );
 idCVar in_padSprintStick( "in_padSprintStick", "0.3", CVAR_GAME | CVAR_ARCHIVE | CVAR_FLOAT | CVAR_PROFILE, "_padsprint: sprint stops when the move stick's forward push drops under this", 0.0f, 0.95f );
 
@@ -67,8 +68,12 @@ const int GAMEPAD_PRESS_MSEC = 2 * USERCMD_MSEC + 10;
 const int GAMEPAD_ZOOM_RETRY_MSEC = 800;
 
 // the melee bank (_weapon0) and the items bank (_weapon5), as retail's defaultbinds.cfg names them
+// (the inventory counts banks from 0: decls/DeclInvSlot.cpp takes one off the decl's number)
 const int GAMEPAD_MELEE_BANK = 0;
 const int GAMEPAD_ITEMS_BANK = 5;
+// the guns: the sidearm (_weapon1) and the two-handed primary (_weapon2)
+const int GAMEPAD_SIDEARM_BANK = 1;
+const int GAMEPAD_PRIMARY_BANK = 2;
 
 // quick grenade and melee hold fire at least this long (a grenade's GRENADE_MINRELEASETIME is 0.1 s)
 const int GAMEPAD_QUICK_MIN_FIRE_MSEC = 150;
@@ -454,18 +459,80 @@ void sdGamepadControls::SetQuickState( int state, const char* why ) {
 
 /*
 ================
-sdGamepadControls::FinishSwitch
+sdGamepadControls::QuickSwitchTo
 
-The retail switch (idPlayer::SelectWeapon, AcceptWeaponSwitch) only goes through while
-the weapon menu is up; otherwise it waits for the menu's timeout or the next fire press.
-A quick action switches at once, without the menu.
+Puts this inventory weapon in the player's hands at once: no weapon menu (the retail
+switch waits for it, idPlayer::AcceptWeaponSwitch) and, where the game runs here, no
+put-away animation either (idWeapon::InstantSwitch, as the scripts' setWeapon does).
 ================
 */
-void sdGamepadControls::FinishSwitch( idPlayer* player ) {
-	if ( player->GetInventory().IsSwitchActive() ) {
-		player->SwitchWeapon();
-		player->ShowWeaponMenu( sdWeaponSelectionMenu::AT_DISABLED );
+void sdGamepadControls::QuickSwitchTo( idPlayer* player, int weaponIndex ) {
+	sdInventory& inventory = player->GetInventory();
+	if ( weaponIndex < 0 || weaponIndex == inventory.GetCurrentWeapon() ) {
+		return;
 	}
+	idWeapon* held = player->GetWeapon();
+	inventory.SetSwitchingWeapon( weaponIndex );
+	player->SwitchWeapon();
+	player->ShowWeaponMenu( sdWeaponSelectionMenu::AT_DISABLED );
+	if ( !gameLocal.isClient && held != NULL && held->IsReady() ) {
+		held->InstantSwitch();
+	}
+}
+
+/*
+================
+sdGamepadControls::BankWeapon
+
+The weapon a quick action takes from a bank: its first one with ammo, or -1
+================
+*/
+int sdGamepadControls::BankWeapon( idPlayer* player, int bank ) {
+	sdInventory& inventory = player->GetInventory();
+	if ( bank < 0 || bank >= inventory.GetMaxBanks() || inventory.GetSlotForBank( bank ) == -1 ) {
+		return -1;
+	}
+	if ( inventory.GetCurrentSlot() == bank ) {
+		return inventory.GetCurrentWeapon();
+	}
+	bool looped = false;
+	return inventory.CycleWeaponByPosition( bank, true, looped, false, true );
+}
+
+/*
+================
+sdGamepadControls::SelectGun
+
+in_gunsOnly: the weapon keys and next/previous weapon (idPlayer::SelectWeapon,
+NextWeapon, PrevWeapon) only reach the sidearm and the primary. Returns false for
+a bank that is not a gun, which the caller then ignores; true when it handled the
+request (bank -1: the other gun, as Destiny's swap).
+================
+*/
+bool sdGamepadControls::SelectGun( idPlayer* player, int bank ) {
+	if ( !in_gunsOnly.GetBool() ) {
+		return false;
+	}
+	if ( bank == -1 ) {
+		const int current = player->GetInventory().GetCurrentSlot();
+		bank = current == GAMEPAD_PRIMARY_BANK ? GAMEPAD_SIDEARM_BANK : GAMEPAD_PRIMARY_BANK;
+		if ( BankWeapon( player, bank ) == -1 ) {
+			bank = bank == GAMEPAD_PRIMARY_BANK ? GAMEPAD_SIDEARM_BANK : GAMEPAD_PRIMARY_BANK;
+		}
+	}
+	if ( bank != GAMEPAD_PRIMARY_BANK && bank != GAMEPAD_SIDEARM_BANK ) {
+		return true;	// not a gun: nothing happens
+	}
+	if ( quickState != QG_IDLE ) {
+		quickPrevWeapon = BankWeapon( player, bank );	// a quick action comes back to it
+		return true;
+	}
+	QuickSwitchTo( player, BankWeapon( player, bank ) );
+	return true;
+}
+
+bool sdGamepadControls::GunsOnly( void ) const {
+	return in_gunsOnly.GetBool();
 }
 
 void sdGamepadControls::OnPadSprint( bool down ) {
@@ -525,6 +592,8 @@ void sdGamepadControls::OnSwapWeapon( bool down ) {
 		if ( swapHeld && !swapActed ) {
 			swapActed = true;
 			swapPending = true;
+		} else if ( swapHeld && quickBank == GAMEPAD_ITEMS_BANK ) {
+			OnQuickItem( false );
 		}
 		swapHeld = false;
 	}
@@ -628,7 +697,7 @@ void sdGamepadControls::UsercommandCallback( idPlayer* player, usercmd_t& cmd ) 
 	}
 	if ( swapHeld && !swapActed && now - swapStart >= in_padHoldTime.GetInteger() ) {
 		swapActed = true;
-		player->PerformImpulse( UCI_WEAP0 + GAMEPAD_ITEMS_BANK );
+		OnQuickItem( true );	// the item while Y stays held (OnSwapWeapon lets it go)
 	}
 
 	// B: crouch while held, a tap toggles the crouch latch, a hold goes prone
@@ -713,23 +782,22 @@ once), then switch back to the weapon held before.
 */
 void sdGamepadControls::UpdateQuick( idPlayer* player, usercmd_t& cmd, int now ) {
 	sdInventory& inventory = player->GetInventory();
-	const int bankSlot = quickBank >= 0 && quickBank < inventory.GetMaxBanks() ? inventory.GetSlotForBank( quickBank ) : -1;
 
 	switch ( quickState ) {
 		case QG_IDLE:
 			return;
 
 		case QG_START: {
-			if ( bankSlot == -1 ) {
-				SetQuickState( QG_IDLE, "no such bank" );
+			const int target = BankWeapon( player, quickBank );
+			if ( target == -1 ) {
+				SetQuickState( QG_IDLE, "nothing usable in that bank" );
 				return;
 			}
 			quickPrevWeapon = inventory.GetCurrentWeapon();
-			if ( inventory.GetCurrentSlot() == bankSlot ) {
+			if ( target == quickPrevWeapon ) {
 				quickPrevWeapon = -1;	// already in hand: just use it
 			} else {
-				player->PerformImpulse( UCI_WEAP0 + quickBank );
-				FinishSwitch( player );
+				QuickSwitchTo( player, target );
 			}
 			quickDeadline = now + GAMEPAD_QUICK_SWITCH_MSEC;
 			SetQuickState( QG_SWITCHING, "selected" );
@@ -737,14 +805,15 @@ void sdGamepadControls::UpdateQuick( idPlayer* player, usercmd_t& cmd, int now )
 		}
 
 		case QG_SWITCHING: {
-			FinishSwitch( player );
+			// GetCurrentSlot is the bank of the weapon being brought up
 			idWeapon* weapon = player->GetWeapon();
-			if ( inventory.GetCurrentSlot() == bankSlot && !inventory.IsSwitchActive() && weapon != NULL && weapon->IsReady() ) {
+			const bool inHand = inventory.GetCurrentSlot() == quickBank && !inventory.IsSwitchActive() &&
+				player->GetInventory().GetCurrentWeapon() >= 0 && weapon != NULL && weapon->IsReady();
+			if ( inHand ) {
 				SetQuickState( QG_FIRING, "up" );
 				quickFireStart = now;
 			} else if ( now > quickDeadline ) {
-				// nothing in that bank (no ammo, or the class has none): back to the gun
-				SetQuickState( QG_DONE, inventory.GetCurrentSlot() == bankSlot ? "never ready" : "never selected" );
+				SetQuickState( QG_DONE, inventory.GetCurrentSlot() == quickBank ? "never ready" : "never selected" );
 				quickDeadline = now;
 				return;
 			} else {
@@ -758,22 +827,22 @@ void sdGamepadControls::UpdateQuick( idPlayer* player, usercmd_t& cmd, int now )
 			const bool minimumHeld = now - quickFireStart >= GAMEPAD_QUICK_MIN_FIRE_MSEC;
 			if ( minimumHeld && ( quickMelee || !quickHeld ) ) {
 				SetQuickState( QG_DONE, quickMelee ? "swung" : "released" );
-				quickDeadline = now + 1500;
+				quickDeadline = now + 2000;
 				cmd.buttons.btn.attack = false;
 			}
 			return;
 		}
 
 		case QG_DONE: {
+			// back once the throw or swing is over and the weapon is ready again
 			idWeapon* weapon = player->GetWeapon();
-			const bool done = inventory.GetCurrentSlot() != bankSlot || ( weapon != NULL && weapon->IsReady() && now - quickFireStart > 300 );
+			const bool done = inventory.GetCurrentSlot() != quickBank || ( weapon != NULL && weapon->IsReady() && now - quickFireStart > 300 );
 			if ( !done && now <= quickDeadline ) {
 				return;
 			}
 			SetQuickState( QG_IDLE, "back" );
-			if ( quickPrevWeapon >= 0 && inventory.GetCurrentWeapon() != quickPrevWeapon ) {
-				inventory.SetSwitchingWeapon( quickPrevWeapon );
-				FinishSwitch( player );
+			if ( quickPrevWeapon >= 0 ) {
+				QuickSwitchTo( player, quickPrevWeapon );
 			}
 			quickPrevWeapon = -1;
 			return;

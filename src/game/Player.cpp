@@ -5889,6 +5889,12 @@ void idPlayer::DoWeapNext() {
 		return;
 	}
 
+	// in_gunsOnly: the other gun (GamepadControls.cpp)
+	if ( gameLocal.IsLocalPlayer( this ) && GetProxyEntity() == NULL && !InhibitWeaponSwitch() &&
+		sdGamepadControls::GetInstance().SelectGun( this, -1 ) ) {
+		return;
+	}
+
 	NextWeapon();
 
 }
@@ -5901,6 +5907,11 @@ idPlayer::DoWeapPrev
 void idPlayer::DoWeapPrev() {
 	idWeapon* weapon = GetWeapon();
 	if ( weapon && weapon->OnWeapPrev() ) {
+		return;
+	}
+
+	if ( gameLocal.IsLocalPlayer( this ) && GetProxyEntity() == NULL && !InhibitWeaponSwitch() &&
+		sdGamepadControls::GetInstance().SelectGun( this, -1 ) ) {
 		return;
 	}
 
@@ -5931,7 +5942,11 @@ void idPlayer::PerformImpulse( int impulse ) {
 			iface->SelectWeapon( this, impulse - UCI_WEAP0 );
 		} else {
 			if ( gameLocal.IsLocalPlayer( this ) ) {
-				SelectWeapon( impulse, false );
+				// in_gunsOnly: only the gun banks (GamepadControls.cpp)
+				const bool unpause = currentToolTip != NULL && currentToolTip->GetUnpauseWeaponSlot() - 1 == impulse - UCI_WEAP0;
+				if ( unpause || InhibitWeaponSwitch() || !sdGamepadControls::GetInstance().SelectGun( this, impulse - UCI_WEAP0 ) ) {
+					SelectWeapon( impulse, false );
+				}
 			}
 		}
 		return;
