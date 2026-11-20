@@ -13,7 +13,41 @@ static char THIS_FILE[] = __FILE__;
 #include "InputMode.h"
 #include "GamepadControls.h"
 
+#include "vehicles/Transport.h"
+
 extern idCVar in_aim_invertPitch;	// GamepadControls.cpp: one pitch inversion for every pad mode
+
+idCVar in_vehicle_triggerThrottle( "in_vehicle_triggerThrottle", "1", CVAR_GAME | CVAR_ARCHIVE | CVAR_BOOL | CVAR_PROFILE, "gamepad: drive ground vehicles Destiny Sparrow style, right trigger throttle and left trigger brake and reverse, the left stick steers" );
+
+/*
+=======================================
+	TriggerThrottle
+
+OpenETQW: for the first pad of the local player in a ground vehicle's driver seat, the
+throttle comes from the triggers (axes 4 and 5, GamepadMapping.h), and the right trigger
+stops firing (sdGamepadControls::TriggerDriving). Returns false when the stick drives.
+=======================================
+*/
+static bool TriggerThrottle( bool doGameCallback, const int controllerNum, const float* controllerAxis, float& throttle ) {
+	if ( !doGameCallback || controllerNum != 1 || !in_vehicle_triggerThrottle.GetBool() ) {
+		return false;
+	}
+	idPlayer* player = gameLocal.GetLocalPlayer();
+	idEntity* proxy = player != NULL ? player->GetProxyEntity() : NULL;
+	if ( proxy == NULL || !proxy->IsType( sdTransport::Type ) ) {
+		return false;
+	}
+	if ( static_cast< sdTransport* >( proxy )->GetPositionManager().FindDriver() != player ) {
+		return false;
+	}
+	float value = controllerAxis[ 5 ] - controllerAxis[ 4 ];
+	if ( idMath::Fabs( value ) < 0.05f ) {
+		value = 0.0f;
+	}
+	throttle = value * 127.0f;
+	sdGamepadControls::GetInstance().NoteTriggerDriving();
+	return true;
+}
 
 /*
 ===============================================================================
@@ -226,6 +260,7 @@ INPUTMODE_AXIS_DECLARE_DEFAULTS( sdInputModeCar, car, yaw, 2, 0.2, 230, 1, 0, 4 
 void sdInputModeCar::ControllerMove( bool doGameCallback, const int controllerNum, const float* controllerAxis, idVec3& viewAngles, usercmd_t& cmd ) {
 	INPUTMODE_AXIS_EVALUATE( sdInputModeCar, throttle, controllerAxis );
 	INPUTMODE_AXIS_EVALUATE( sdInputModeCar, steering, controllerAxis );
+	TriggerThrottle( doGameCallback, controllerNum, controllerAxis, throttle );
 	INPUTMODE_AXIS_EVALUATE( sdInputModeCar, pitch, controllerAxis );
 	INPUTMODE_AXIS_EVALUATE( sdInputModeCar, yaw, controllerAxis );
 	if ( in_aim_invertPitch.GetBool() ) {
@@ -336,6 +371,7 @@ INPUTMODE_AXIS_DECLARE_DEF_AXIS( sdInputModeHovertank, hovertank, side, -1 );
 */
 void sdInputModeHovertank::ControllerMove( bool doGameCallback, const int controllerNum, const float* controllerAxis, idVec3& viewAngles, usercmd_t& cmd ) {
 	INPUTMODE_AXIS_EVALUATE( sdInputModeHovertank, forward, controllerAxis );
+	TriggerThrottle( doGameCallback, controllerNum, controllerAxis, forward );
 	INPUTMODE_AXIS_EVALUATE( sdInputModeHovertank, side, controllerAxis );
 	INPUTMODE_AXIS_EVALUATE( sdInputModeHovertank, turn, controllerAxis );
 	INPUTMODE_AXIS_EVALUATE( sdInputModeHovertank, pitch, controllerAxis );

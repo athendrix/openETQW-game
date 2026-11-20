@@ -25,7 +25,16 @@ Gamepad play in the style of modern console shooters (Destiny 2 is the reference
     comes back from forward or the player fires or zooms. In a vehicle it is boost, held.
   - Tap to reload, hold to use (_reloaduse): a tap reloads; held for in_padHoldTime it
     uses (enter or leave a vehicle, and the use button held: arm, disarm, pick up).
-  - In a vehicle, _zoomhold is alt-fire held.
+  - In a vehicle, _zoomhold is alt-fire held, and in a vehicle X taps to switch seat or
+    launch decoys (activate) and holds to get out.
+  - _padfire: fire, except for the driver of a ground vehicle who drives with the
+    triggers (Sparrow style: right trigger throttle, left trigger brake and reverse; the
+    car and hovertank input modes in InputMode.cpp, in_vehicle_triggerThrottle).
+  - _crouchprone: a tap crouches and stays crouched until the next tap, a jump or
+    sprint; held, the player goes prone (a tap stands up again).
+  - _swapweapon: a tap selects the next weapon, a hold the items bank (_weapon5).
+  - _interact (keyboard E, Destiny style): use at once and held; in a vehicle a tap
+    switches seat and a hold gets out.
 
 Everything here runs on the local client while it builds its usercmds. Nothing is sent
 that a player could not send with the stock buttons, and the server is unchanged.
@@ -46,6 +55,14 @@ public:
 	void						OnQuickMelee( bool down );
 	void						OnPadSprint( bool down );
 	void						OnReloadUse( bool down );
+	void						OnInteract( bool down );
+	void						OnPadFire( bool down );
+	void						OnCrouchProne( bool down );
+	void						OnSwapWeapon( bool down );
+
+	// the car and hovertank input modes drive with the triggers this frame (Sparrow style)
+	void						NoteTriggerDriving( void );
+	bool						TriggerDriving( void ) const;
 
 	// idPlayer::UsercommandCallback, for the local player
 	void						UsercommandCallback( idPlayer* player, usercmd_t& cmd );
@@ -105,11 +122,37 @@ private:
 	bool						padSprint;
 	bool						padSprintHeld;
 
-	// tap to reload, hold to use
+	// tap and hold buttons: X (_reloaduse) and E (_interact)
+	enum tapHoldMode_t {
+		TH_RELOAD_USE,		// tap reloads, hold uses
+		TH_INTERACT			// press uses at once and holds use
+	};
+	void						OnTapHold( tapHoldMode_t mode, bool down );
+	void						UpdateTapHold( idPlayer* player, usercmd_t& cmd, int now, bool onFoot );
+	tapHoldMode_t				tapHoldMode;
 	bool						reloadUseHeld;
 	bool						reloadUseActed;
 	bool						reloadPending;
 	int							reloadUseStart;
+	int							activatePulseUntil;
+
+	// right trigger as fire, which a driver using the triggers to drive does not send
+	bool						padFireHeld;
+	int							triggerDrivingTime;
+
+	// B: tap to crouch (a latch), hold to go prone
+	bool						crouchHeld;
+	bool						crouchActed;
+	bool						crouchLatched;
+	bool						crouchStandPending;
+	int							crouchStart;
+
+	// Y: tap for the next weapon, hold for the items bank
+	bool						swapHeld;
+	bool						swapActed;
+	bool						swapPending;
+	int							swapStart;
+	bool						usedVehicleThisPress;
 };
 
 #endif /* !__GAME_GAMEPADCONTROLS_H__ */

@@ -65,8 +65,9 @@ const int GAMEPAD_PRESS_MSEC = 2 * USERCMD_MSEC + 10;
 // after an alt-fire press, how long to wait for the weapon to change state before trying again
 const int GAMEPAD_ZOOM_RETRY_MSEC = 800;
 
-// the melee bank (_weapon0)
+// the melee bank (_weapon0) and the items bank (_weapon5), as retail's defaultbinds.cfg names them
 const int GAMEPAD_MELEE_BANK = 0;
+const int GAMEPAD_ITEMS_BANK = 5;
 
 // quick grenade and melee hold fire at least this long (a grenade's GRENADE_MINRELEASETIME is 0.1 s)
 const int GAMEPAD_QUICK_MIN_FIRE_MSEC = 150;
@@ -141,10 +142,24 @@ void sdGamepadControls::Reset( void ) {
 	quickFireStart = 0;
 	padSprint = false;
 	padSprintHeld = false;
+	tapHoldMode = TH_RELOAD_USE;
 	reloadUseHeld = false;
 	reloadUseActed = false;
 	reloadPending = false;
 	reloadUseStart = 0;
+	activatePulseUntil = 0;
+	padFireHeld = false;
+	triggerDrivingTime = 0;
+	crouchHeld = false;
+	crouchActed = false;
+	crouchLatched = false;
+	crouchStandPending = false;
+	crouchStart = 0;
+	swapHeld = false;
+	swapActed = false;
+	swapPending = false;
+	swapStart = 0;
+	usedVehicleThisPress = false;
 }
 
 int sdGamepadControls::Now( void ) const {
@@ -418,13 +433,14 @@ void sdGamepadControls::OnPadSprint( bool down ) {
 	}
 }
 
-void sdGamepadControls::OnReloadUse( bool down ) {
+void sdGamepadControls::OnTapHold( tapHoldMode_t mode, bool down ) {
 	const int now = Now();
 	if ( down ) {
+		tapHoldMode = mode;
 		reloadUseHeld = true;
 		reloadUseStart = now;
 		reloadUseActed = false;
-	} else {
+	} else if ( mode == tapHoldMode ) {
 		if ( reloadUseHeld && !reloadUseActed ) {
 			reloadPending = true;	// a tap
 		}
@@ -432,36 +448,172 @@ void sdGamepadControls::OnReloadUse( bool down ) {
 	}
 }
 
-void sdGamepadControls::UsercommandCallback( idPlayer* player, usercmd_t& cmd ) {
-	const int now = Now();
+void sdGamepadControls::OnReloadUse( bool down ) {
+	OnTapHold( TH_RELOAD_USE, down );
+}
 
-	// X: a tap reloads, a hold uses (enter or leave a vehicle, arm, disarm, pick up)
+void sdGamepadControls::OnInteract( bool down ) {
+	OnTapHold( TH_INTERACT, down );
+}
+
+void sdGamepadControls::OnPadFire( bool down ) {
+	padFireHeld = down;
+}
+
+void sdGamepadControls::OnCrouchProne( bool down ) {
+	const int now = Now();
+	if ( down ) {
+		crouchHeld = true;
+		crouchActed = false;
+		crouchStart = now;
+	} else {
+		if ( crouchHeld && !crouchActed ) {
+			crouchStandPending = true;	// a tap: resolved in UsercommandCallback, which knows the stance
+		}
+		crouchHeld = false;
+	}
+}
+
+void sdGamepadControls::OnSwapWeapon( bool down ) {
+	if ( down ) {
+		swapHeld = true;
+		swapActed = false;
+		swapStart = Now();
+	} else {
+		if ( swapHeld && !swapActed ) {
+			swapActed = true;
+			swapPending = true;
+		}
+		swapHeld = false;
+	}
+}
+
+void sdGamepadControls::NoteTriggerDriving( void ) {
+	triggerDrivingTime = Now();
+}
+
+bool sdGamepadControls::TriggerDriving( void ) const {
+	return triggerDrivingTime != 0 && Now() - triggerDrivingTime < 250;
+}
+
+/*
+================
+sdGamepadControls::UpdateTapHold
+
+_reloaduse on foot: a tap reloads; held, use is held and the vehicle in front is entered.
+_interact on foot: use is held from the press, and the vehicle in front is entered.
+Either in a vehicle: a tap is a short use press (switch seat, launch decoys); held, the
+player gets out.
+================
+*/
+void sdGamepadControls::UpdateTapHold( idPlayer* player, usercmd_t& cmd, int now, bool onFoot ) {
+	const int holdTime = in_padHoldTime.GetInteger();
 	if ( reloadPending ) {
 		reloadPending = false;
-		player->PerformImpulse( UCI_RELOAD );
-	}
-	if ( reloadUseHeld && now - reloadUseStart >= in_padHoldTime.GetInteger() ) {
-		cmd.buttons.btn.activate = true;
-		if ( !reloadUseActed ) {
-			reloadUseActed = true;
-			player->PerformImpulse( UCI_USE_VEHICLE );
+		if ( !onFoot ) {
+			activatePulseUntil = now + GAMEPAD_PRESS_MSEC;
+		} else if ( tapHoldMode == TH_RELOAD_USE ) {
+			player->PerformImpulse( UCI_RELOAD );
+		} else {
+			activatePulseUntil = now + GAMEPAD_PRESS_MSEC;	// _interact: a short press is a short use
 		}
+	}
+	if ( reloadUseHeld ) {
+		const bool held = now - reloadUseStart >= holdTime;
+		if ( onFoot && tapHoldMode == TH_INTERACT ) {
+			// use held from the press, and the vehicle in front entered; the release is
+			// not also a tap (in the vehicle it would switch seat)
+			cmd.buttons.btn.activate = true;
+			reloadUseActed = true;
+			if ( !usedVehicleThisPress ) {
+				usedVehicleThisPress = true;
+				player->PerformImpulse( UCI_USE_VEHICLE );
+			}
+		} else if ( held ) {
+			if ( onFoot ) {
+				cmd.buttons.btn.activate = true;
+			}
+			if ( !reloadUseActed ) {
+				reloadUseActed = true;
+				player->PerformImpulse( UCI_USE_VEHICLE );
+			}
+		}
+	} else {
+		usedVehicleThisPress = false;
+	}
+	if ( now < activatePulseUntil ) {
+		cmd.buttons.btn.activate = true;
+	}
+}
+
+void sdGamepadControls::UsercommandCallback( idPlayer* player, usercmd_t& cmd ) {
+	const int now = Now();
+	const bool onFoot = OnFoot( player );
+	idEntity* proxy = player->GetProxyEntity();
+
+	UpdateTapHold( player, cmd, now, onFoot );
+
+	// right trigger: fire, unless this player drives a ground vehicle with the triggers
+	const bool drivingWithTriggers = proxy != NULL && TriggerDriving();
+	if ( padFireHeld && !drivingWithTriggers ) {
+		cmd.buttons.btn.attack = true;
 	}
 
-	if ( !OnFoot( player ) ) {
-		// in a vehicle the triggers and the sprint click act as plain buttons: alt-fire held
-		// (a vehicle's second weapon or zoom) and boost held
+	if ( !onFoot ) {
+		// in a vehicle the left trigger is alt-fire held (brake for a trigger driver) and the
+		// sprint click is boost held
 		zoomPulseUntil = 0;
 		padSprint = false;
+		crouchLatched = false;
+		crouchStandPending = false;
 		quickState = QG_IDLE;
-		if ( zoomWanted && player->GetProxyEntity() != NULL ) {
-			cmd.buttons.btn.altAttack = true;
+		if ( proxy != NULL ) {
+			if ( zoomWanted && !drivingWithTriggers ) {
+				cmd.buttons.btn.altAttack = true;
+			}
+			if ( padSprintHeld ) {
+				cmd.buttons.btn.sprint = true;
+			}
 		}
-		if ( padSprintHeld && player->GetProxyEntity() != NULL ) {
-			cmd.buttons.btn.sprint = true;
-		}
+		swapPending = false;
 		return;
 	}
+
+	// Y: a tap is the next weapon, a hold the items bank
+	if ( swapPending ) {
+		swapPending = false;
+		player->PerformImpulse( UCI_WEAPNEXT );
+	}
+	if ( swapHeld && !swapActed && now - swapStart >= in_padHoldTime.GetInteger() ) {
+		swapActed = true;
+		player->PerformImpulse( UCI_WEAP0 + GAMEPAD_ITEMS_BANK );
+	}
+
+	// B: crouch while held, a tap toggles the crouch latch, a hold goes prone
+	const bool prone = player->GetPlayerPhysics().IsProne();
+	if ( crouchStandPending ) {
+		crouchStandPending = false;
+		if ( prone ) {
+			player->PerformImpulse( UCI_PRONE );	// up from prone
+			crouchLatched = false;
+		} else {
+			crouchLatched = !crouchLatched;
+		}
+	}
+	if ( crouchHeld && !crouchActed && now - crouchStart >= in_padHoldTime.GetInteger() + 100 ) {
+		crouchActed = true;
+		crouchLatched = false;
+		if ( !prone ) {
+			player->PerformImpulse( UCI_PRONE );
+		}
+	}
+	if ( cmd.upmove > 0 || padSprint ) {
+		crouchLatched = false;	// a jump or a sprint stands up
+	}
+	if ( !prone && ( crouchLatched || ( crouchHeld && !crouchActed ) ) && cmd.upmove <= 0 ) {
+		cmd.upmove = -127;
+	}
+
 	UpdateQuick( player, cmd, now );
 	UpdateZoomHold( player, cmd, now );
 }

@@ -285,7 +285,11 @@ enum usercmdLocalImpulse_t {
 	ULI_PAD_SPRINT = 26,		// gamepad: sprint until the stick comes back
 	ULI_QUICK_MELEE = 27,		// gamepad: one melee swing and switch back
 	ULI_RELOAD_USE = 28,		// gamepad: tap to reload, hold to use
-	ULI_NUM_IMPULSES = 29,
+	ULI_PAD_FIRE = 29,			// gamepad: fire, or throttle for a trigger driver
+	ULI_CROUCH_PRONE = 30,		// gamepad: tap to crouch, hold to go prone
+	ULI_SWAP_WEAPON = 31,		// gamepad: tap next weapon, hold items
+	ULI_INTERACT = 32,			// keyboard (Destiny): use, enter and leave vehicles
+	ULI_NUM_IMPULSES = 33,
 };
 
 typedef idList< const sdDeclInvItem* > sdDeclItemPackageItems;

@@ -10112,6 +10112,10 @@ userCmdString_t	userCmdStrings[] = {
 	{ "_padsprint",			B_LOCAL_IMPULSE,	ULI_PAD_SPRINT },
 	{ "_quickmelee",		B_LOCAL_IMPULSE,	ULI_QUICK_MELEE },
 	{ "_reloaduse",			B_LOCAL_IMPULSE,	ULI_RELOAD_USE },
+	{ "_padfire",			B_LOCAL_IMPULSE,	ULI_PAD_FIRE },
+	{ "_crouchprone",		B_LOCAL_IMPULSE,	ULI_CROUCH_PRONE },
+	{ "_swapweapon",		B_LOCAL_IMPULSE,	ULI_SWAP_WEAPON },
+	{ "_interact",			B_LOCAL_IMPULSE,	ULI_INTERACT },
 };
 
 const int NUM_USERCMD_STRING = sizeof( userCmdStrings ) / sizeof( userCmdStrings[ 0 ] );
@@ -10164,6 +10168,26 @@ void idGameLocal::HandleLocalImpulse( int action, bool down ) {
 
 		case ULI_RELOAD_USE: {
 			sdGamepadControls::GetInstance().OnReloadUse( down );
+			break;
+		}
+
+		case ULI_PAD_FIRE: {
+			sdGamepadControls::GetInstance().OnPadFire( down );
+			break;
+		}
+
+		case ULI_CROUCH_PRONE: {
+			sdGamepadControls::GetInstance().OnCrouchProne( down );
+			break;
+		}
+
+		case ULI_SWAP_WEAPON: {
+			sdGamepadControls::GetInstance().OnSwapWeapon( down );
+			break;
+		}
+
+		case ULI_INTERACT: {
+			sdGamepadControls::GetInstance().OnInteract( down );
 			break;
 		}
 
