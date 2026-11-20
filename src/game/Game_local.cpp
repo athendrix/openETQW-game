@@ -9433,6 +9433,9 @@ idGameLocal::StartRecordingDemo
 ================
 */
 void idGameLocal::StartRecordingDemo( void ) {
+	// OpenETQW records no network demos (the engine has no demo recorder)
+	return;
+
 	idPlayer* localPlayer = GetLocalPlayer();
 	if ( !localPlayer ) {
 		return;
@@ -11596,9 +11599,12 @@ void idGameLocal::GetDemoName( idStr& output ) {
 idGameLocal::StartAutorecording
 ============
 */
-idCVar g_autoRecordDemos( "g_autoRecordDemos", "0", CVAR_GAME | CVAR_PROFILE | CVAR_ARCHIVE, "automatically start & stop demos at the start & end of a map" );
+idCVar g_autoRecordDemos( "g_autoRecordDemos", "0", CVAR_GAME | CVAR_PROFILE | CVAR_ARCHIVE, "unused: OpenETQW records no demos" );
 
 void idGameLocal::StartAutorecording() {
+	// OpenETQW records no network demos (the engine has no demo recorder)
+	return;
+
 	if ( sdDemoManager::GetInstance().InPlayBack() ) {
 		return;
 	}
@@ -11687,9 +11693,12 @@ void idGameLocal::GetScoreboardShotName( idStr& output ) {
 idGameLocal::OnEndGameScoreboardActive
 ============
 */
-idCVar g_autoScreenshot( "g_autoScreenshot", "0", CVAR_BOOL | CVAR_GAME | CVAR_PROFILE | CVAR_ARCHIVE, "automatically take a screenshot of the scoreboard at the end of a map" );
+idCVar g_autoScreenshot( "g_autoScreenshot", "0", CVAR_BOOL | CVAR_GAME | CVAR_PROFILE | CVAR_ARCHIVE, "unused: OpenETQW takes no screenshots; use the OS's screenshot tool" );
 
 void idGameLocal::OnEndGameScoreboardActive() {
+	// OpenETQW takes no screenshots itself: use the OS's screenshot tool
+	return;
+
 	if ( !hasTakenScoreShot && g_autoScreenshot.GetBool() ) {
 		idStr shotName;
 		GetScoreboardShotName( shotName );
