@@ -21,8 +21,15 @@ Gamepad play in the style of modern console shooters (Destiny 2 is the reference
   - Quick grenade (_quickgrenade): selects the grenade bank, holds fire while the button
     is held (cooking), throws on release, then switches back to the previous weapon.
   - Quick melee (_quickmelee): selects the melee bank, swings once, switches back.
-  - Pad sprint (_padsprint): a press starts sprinting, which lasts until the left stick
-    comes back from forward or the player fires or zooms. In a vehicle it is boost, held.
+  - Quick tool and item (_quicktool, _quickitem): select the tools (_weapon4) or items
+    (_weapon5) bank, hold fire while the button is held (hack, arm, place, throw a pack),
+    then switch back, so the player is only ever on a gun unless a button is held.
+    Each quick action finishes the switch itself: the retail switch waits for the
+    weapon menu, and without it the weapon came up seconds later, unused.
+    in_quickDebug prints what they do.
+  - Pad sprint (_padsprint): a press starts sprinting, which lasts until the player stops
+    moving forward (the left stick comes back, or the forward key is let go) or fires
+    or zooms. In a vehicle it is boost, held.
   - Tap to reload, hold to use (_reloaduse): a tap reloads; held for in_padHoldTime it
     uses (enter or leave a vehicle, and the use button held: arm, disarm, pick up).
   - In a vehicle, _zoomhold is alt-fire held, and in a vehicle X taps to switch seat or
@@ -53,6 +60,8 @@ public:
 	void						OnZoomHold( bool down );
 	void						OnQuickGrenade( bool down );
 	void						OnQuickMelee( bool down );
+	void						OnQuickTool( bool down );
+	void						OnQuickItem( bool down );
 	void						OnPadSprint( bool down );
 	void						OnReloadUse( bool down );
 	void						OnInteract( bool down );
@@ -84,6 +93,8 @@ private:
 	void						UpdateZoomHold( idPlayer* player, usercmd_t& cmd, int now );
 	void						StartQuick( int bank, bool melee, bool down );
 	void						UpdateQuick( idPlayer* player, usercmd_t& cmd, int now );
+	static void					FinishSwitch( idPlayer* player );
+	void						SetQuickState( int state, const char* why );
 
 	enum quickState_t {
 		QG_IDLE,

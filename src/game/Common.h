@@ -289,7 +289,9 @@ enum usercmdLocalImpulse_t {
 	ULI_CROUCH_PRONE = 30,		// gamepad: tap to crouch, hold to go prone
 	ULI_SWAP_WEAPON = 31,		// gamepad: tap next weapon, hold items
 	ULI_INTERACT = 32,			// keyboard (Destiny): use, enter and leave vehicles
-	ULI_NUM_IMPULSES = 33,
+	ULI_QUICK_TOOL = 33,		// the class tool while held, then back to the gun
+	ULI_QUICK_ITEM = 34,		// the item while held, then back to the gun
+	ULI_NUM_IMPULSES = 35,
 };
 
 typedef idList< const sdDeclInvItem* > sdDeclItemPackageItems;

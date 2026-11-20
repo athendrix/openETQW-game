@@ -52,6 +52,7 @@ idCVar in_aim_assistDebug( "in_aim_assistDebug", "0", CVAR_GAME | CVAR_BOOL, "ai
 idCVar in_padHoldTime( "in_padHoldTime", "250", CVAR_GAME | CVAR_ARCHIVE | CVAR_INTEGER | CVAR_PROFILE, "_reloaduse: milliseconds a press must last to use instead of reload", 100, 1000 );
 
 // pad sprint
+idCVar in_quickDebug( "in_quickDebug", "0", CVAR_GAME | CVAR_BOOL, "print what the quick grenade, melee, tool and item actions do" );
 idCVar in_padSprintStick( "in_padSprintStick", "0.3", CVAR_GAME | CVAR_ARCHIVE | CVAR_FLOAT | CVAR_PROFILE, "_padsprint: sprint stops when the move stick's forward push drops under this", 0.0f, 0.95f );
 
 namespace {
@@ -71,6 +72,10 @@ const int GAMEPAD_ITEMS_BANK = 5;
 
 // quick grenade and melee hold fire at least this long (a grenade's GRENADE_MINRELEASETIME is 0.1 s)
 const int GAMEPAD_QUICK_MIN_FIRE_MSEC = 150;
+// the tools bank (_weapon4: the class tool) as retail's defaultbinds.cfg names it
+const int GAMEPAD_TOOLS_BANK = 4;
+// how long a quick action waits for the weapon to come up (a slow lower and raise)
+const int GAMEPAD_QUICK_SWITCH_MSEC = 4000;
 
 // does the weapon's script have sights or a scope (weapons/base.script)
 bool WeaponHasSights( idWeapon* weapon ) {
@@ -414,15 +419,52 @@ void sdGamepadControls::StartQuick( int bank, bool melee, bool down ) {
 	}
 }
 
+// a press starts a quick action when none runs; a release ends the one it started
 void sdGamepadControls::OnQuickGrenade( bool down ) {
-	if ( quickState == QG_IDLE || !quickMelee ) {
+	if ( quickState == QG_IDLE || quickBank == GAMEPAD_GRENADE_BANK ) {
 		StartQuick( GAMEPAD_GRENADE_BANK, false, down );
 	}
 }
 
 void sdGamepadControls::OnQuickMelee( bool down ) {
-	if ( quickState == QG_IDLE || quickMelee ) {
+	if ( quickState == QG_IDLE || quickBank == GAMEPAD_MELEE_BANK ) {
 		StartQuick( GAMEPAD_MELEE_BANK, true, down );
+	}
+}
+
+void sdGamepadControls::OnQuickTool( bool down ) {
+	if ( quickState == QG_IDLE || quickBank == GAMEPAD_TOOLS_BANK ) {
+		StartQuick( GAMEPAD_TOOLS_BANK, false, down );
+	}
+}
+
+void sdGamepadControls::OnQuickItem( bool down ) {
+	if ( quickState == QG_IDLE || quickBank == GAMEPAD_ITEMS_BANK ) {
+		StartQuick( GAMEPAD_ITEMS_BANK, false, down );
+	}
+}
+
+void sdGamepadControls::SetQuickState( int state, const char* why ) {
+	if ( in_quickDebug.GetBool() && state != quickState ) {
+		static const char* const names[] = { "idle", "start", "switching", "firing", "done" };
+		gameLocal.Printf( "quick bank %d: %s -> %s (%s)\n", quickBank, names[ quickState ], names[ state ], why );
+	}
+	quickState = static_cast< quickState_t >( state );
+}
+
+/*
+================
+sdGamepadControls::FinishSwitch
+
+The retail switch (idPlayer::SelectWeapon, AcceptWeaponSwitch) only goes through while
+the weapon menu is up; otherwise it waits for the menu's timeout or the next fire press.
+A quick action switches at once, without the menu.
+================
+*/
+void sdGamepadControls::FinishSwitch( idPlayer* player ) {
+	if ( player->GetInventory().IsSwitchActive() ) {
+		player->SwitchWeapon();
+		player->ShowWeaponMenu( sdWeaponSelectionMenu::AT_DISABLED );
 	}
 }
 
@@ -614,6 +656,16 @@ void sdGamepadControls::UsercommandCallback( idPlayer* player, usercmd_t& cmd ) 
 		cmd.upmove = -127;
 	}
 
+	// _padsprint from the keyboard lasts while the player moves forward (the pad's stick is
+	// checked in PlayerControllerMove, which runs first and may already have stopped it)
+	if ( padSprint ) {
+		if ( cmd.forwardmove <= 0 || cmd.buttons.btn.attack || cmd.buttons.btn.altAttack || zoomWanted ) {
+			padSprint = false;
+		} else {
+			cmd.buttons.btn.sprint = true;
+		}
+	}
+
 	UpdateQuick( player, cmd, now );
 	UpdateZoomHold( player, cmd, now );
 }
@@ -669,7 +721,7 @@ void sdGamepadControls::UpdateQuick( idPlayer* player, usercmd_t& cmd, int now )
 
 		case QG_START: {
 			if ( bankSlot == -1 ) {
-				quickState = QG_IDLE;
+				SetQuickState( QG_IDLE, "no such bank" );
 				return;
 			}
 			quickPrevWeapon = inventory.GetCurrentWeapon();
@@ -677,19 +729,23 @@ void sdGamepadControls::UpdateQuick( idPlayer* player, usercmd_t& cmd, int now )
 				quickPrevWeapon = -1;	// already in hand: just use it
 			} else {
 				player->PerformImpulse( UCI_WEAP0 + quickBank );
+				FinishSwitch( player );
 			}
-			quickDeadline = now + 1500;
-			quickState = QG_SWITCHING;
+			quickDeadline = now + GAMEPAD_QUICK_SWITCH_MSEC;
+			SetQuickState( QG_SWITCHING, "selected" );
 			// fall through: it may already be up
 		}
 
 		case QG_SWITCHING: {
+			FinishSwitch( player );
 			idWeapon* weapon = player->GetWeapon();
 			if ( inventory.GetCurrentSlot() == bankSlot && !inventory.IsSwitchActive() && weapon != NULL && weapon->IsReady() ) {
-				quickState = QG_FIRING;
+				SetQuickState( QG_FIRING, "up" );
 				quickFireStart = now;
 			} else if ( now > quickDeadline ) {
-				quickState = QG_IDLE;	// nothing in that bank (no ammo, or the class has none)
+				// nothing in that bank (no ammo, or the class has none): back to the gun
+				SetQuickState( QG_DONE, inventory.GetCurrentSlot() == bankSlot ? "never ready" : "never selected" );
+				quickDeadline = now;
 				return;
 			} else {
 				return;
@@ -701,7 +757,7 @@ void sdGamepadControls::UpdateQuick( idPlayer* player, usercmd_t& cmd, int now )
 			cmd.buttons.btn.attack = true;
 			const bool minimumHeld = now - quickFireStart >= GAMEPAD_QUICK_MIN_FIRE_MSEC;
 			if ( minimumHeld && ( quickMelee || !quickHeld ) ) {
-				quickState = QG_DONE;
+				SetQuickState( QG_DONE, quickMelee ? "swung" : "released" );
 				quickDeadline = now + 1500;
 				cmd.buttons.btn.attack = false;
 			}
@@ -714,11 +770,10 @@ void sdGamepadControls::UpdateQuick( idPlayer* player, usercmd_t& cmd, int now )
 			if ( !done && now <= quickDeadline ) {
 				return;
 			}
-			quickState = QG_IDLE;
-			if ( quickPrevWeapon >= 0 && inventory.GetCurrentWeapon() != quickPrevWeapon && !inventory.IsSwitchActive() ) {
+			SetQuickState( QG_IDLE, "back" );
+			if ( quickPrevWeapon >= 0 && inventory.GetCurrentWeapon() != quickPrevWeapon ) {
 				inventory.SetSwitchingWeapon( quickPrevWeapon );
-				player->ShowWeaponMenu( sdWeaponSelectionMenu::AT_DIRECT_SELECTION );
-				player->AcceptWeaponSwitch( false );
+				FinishSwitch( player );
 			}
 			quickPrevWeapon = -1;
 			return;

@@ -10114,6 +10114,8 @@ userCmdString_t	userCmdStrings[] = {
 	{ "_quickgrenade",		B_LOCAL_IMPULSE,	ULI_QUICK_GRENADE },
 	{ "_padsprint",			B_LOCAL_IMPULSE,	ULI_PAD_SPRINT },
 	{ "_quickmelee",		B_LOCAL_IMPULSE,	ULI_QUICK_MELEE },
+	{ "_quicktool",			B_LOCAL_IMPULSE,	ULI_QUICK_TOOL },
+	{ "_quickitem",			B_LOCAL_IMPULSE,	ULI_QUICK_ITEM },
 	{ "_reloaduse",			B_LOCAL_IMPULSE,	ULI_RELOAD_USE },
 	{ "_padfire",			B_LOCAL_IMPULSE,	ULI_PAD_FIRE },
 	{ "_crouchprone",		B_LOCAL_IMPULSE,	ULI_CROUCH_PRONE },
@@ -10164,6 +10166,14 @@ void idGameLocal::HandleLocalImpulse( int action, bool down ) {
 			break;
 		}
 
+		case ULI_QUICK_TOOL: {
+			sdGamepadControls::GetInstance().OnQuickTool( down );
+			break;
+		}
+		case ULI_QUICK_ITEM: {
+			sdGamepadControls::GetInstance().OnQuickItem( down );
+			break;
+		}
 		case ULI_QUICK_MELEE: {
 			sdGamepadControls::GetInstance().OnQuickMelee( down );
 			break;
