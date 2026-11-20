@@ -917,6 +917,9 @@ public:
 
 	void					SetRemoteCamera( idEntity* other, bool force );
 	idEntity*				GetRemoteCamera( void ) { return remoteCamera.GetEntity(); }
+	// the entities the scripts keep for the player (binAdd: a third-eye camera, a flyer drone)
+	int						GetBinSize( void ) const { return entityBin.Num(); }
+	idEntity*				GetBinEntity( int index ) const { return entityBin[ index ].GetEntity(); }
 
 	virtual bool			GetPhysicsToSoundTransform( idVec3 &origin, idMat3 &axis );
 	virtual void			UpdateModelTransform( void );

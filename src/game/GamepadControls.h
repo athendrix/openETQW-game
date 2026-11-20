@@ -65,6 +65,7 @@ public:
 	void						OnQuickMelee( bool down );
 	void						OnQuickTool( bool down );
 	void						OnQuickItem( bool down );
+	void						OnHeavy( bool down );
 	void						OnPadSprint( bool down );
 	void						OnReloadUse( bool down );
 	void						OnInteract( bool down );
@@ -103,6 +104,23 @@ private:
 	void						UpdateQuick( idPlayer* player, usercmd_t& cmd, int now );
 	static void					QuickSwitchTo( idPlayer* player, int weaponIndex );
 	static int					BankWeapon( idPlayer* player, int bank );
+	static int					BankWeaponAt( idPlayer* player, int bank, int n );
+	static int					BankWeaponNamed( idPlayer* player, int bank, const char* text );
+	static bool					WeaponNamed( idPlayer* player, int index, const char* text );
+	static bool					ThirdEyePlaced( idPlayer* player );
+	void						StartQuickOn( int bank, int weaponIndex, bool alt, bool held, int returnTo );
+	void						UpdateItemButton( idPlayer* player, int now );
+	void						UpdateClassAbility( idPlayer* player, int now );
+	void						UpdateSticky( idPlayer* player, int now );
+	void						SelectHeavy( idPlayer* player );
+
+	struct chordButton_t {
+		bool					down;
+		bool					pending;
+		int						pressTime;
+	};
+	void						PressChord( chordButton_t& button, bool down );
+	void						UpdateChord( int now );
 	void						SetQuickState( int state, const char* why );
 
 	enum quickState_t {
@@ -137,6 +155,34 @@ private:
 	int							quickPrevWeapon;
 	int							quickDeadline;
 	int							quickFireStart;
+	int							quickTarget;		// the weapon to use, -1: the bank's first
+	bool						quickAlt;			// press alt-fire instead of fire
+	int							quickReturn;		// the weapon to come back to when the target was in hand
+
+	// the item button: press and long press
+	bool						itemHeld;
+	bool						itemActed;
+	bool						itemShortPending;
+	int							itemStart;
+
+	// the class ability button: the deploy tool toggle
+	bool						toolHeld;
+	bool						toolPressPending;
+	int							deployWeapon;		// out by the toggle, -1: none
+	int							deployReturn;
+	int							deployStart;
+	bool						deploySawPlacing;
+
+	// grenade + melee together: the super
+	chordButton_t				grenadeButton;
+	chordButton_t				meleeButton;
+	bool						superChord;
+	bool						heavyPending;
+
+	// an item kept in hand for a remote view (third eye, flyer drone)
+	int							stickyWeapon;
+	int							stickyReturn;
+	int							stickyStart;
 
 	// pad sprint: the latch on foot, the button held in a vehicle (boost)
 	bool						padSprint;

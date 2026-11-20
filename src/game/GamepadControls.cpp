@@ -7,6 +7,8 @@
 #include "Player.h"
 #include "Weapon.h"
 #include "roles/Inventory.h"
+#include "roles/HudModule.h"
+#include "decls/DeclInvItem.h"
 #include "ContentMask.h"
 #include "script/Script_ScriptObject.h"
 
@@ -74,6 +76,10 @@ const int GAMEPAD_ITEMS_BANK = 5;
 // the guns: the sidearm (_weapon1) and the two-handed primary (_weapon2)
 const int GAMEPAD_SIDEARM_BANK = 1;
 const int GAMEPAD_PRIMARY_BANK = 2;
+// the binoculars (_weapon6): Destiny's heavy weapon here
+const int GAMEPAD_BINOCS_BANK = 6;
+// grenade and melee pressed this close together are the super (the item)
+const int GAMEPAD_CHORD_MSEC = 100;
 
 // quick grenade and melee hold fire at least this long (a grenade's GRENADE_MINRELEASETIME is 0.1 s)
 const int GAMEPAD_QUICK_MIN_FIRE_MSEC = 150;
@@ -150,6 +156,26 @@ void sdGamepadControls::Reset( void ) {
 	quickPrevWeapon = -1;
 	quickDeadline = 0;
 	quickFireStart = 0;
+	quickTarget = -1;
+	quickAlt = false;
+	quickReturn = -1;
+	itemHeld = false;
+	itemActed = false;
+	itemShortPending = false;
+	itemStart = 0;
+	toolHeld = false;
+	toolPressPending = false;
+	deployWeapon = -1;
+	deployReturn = -1;
+	deployStart = 0;
+	deploySawPlacing = false;
+	stickyWeapon = -1;
+	stickyReturn = -1;
+	stickyStart = 0;
+	memset( &grenadeButton, 0, sizeof( grenadeButton ) );
+	memset( &meleeButton, 0, sizeof( meleeButton ) );
+	superChord = false;
+	heavyPending = false;
 	padSprint = false;
 	padSprintHeld = false;
 	tapHoldMode = TH_RELOAD_USE;
@@ -420,32 +446,320 @@ void sdGamepadControls::StartQuick( int bank, bool melee, bool down ) {
 	if ( down && quickState == QG_IDLE ) {
 		quickBank = bank;
 		quickMelee = melee;
+		quickTarget = -1;
+		quickAlt = false;
+		quickReturn = -1;
 		quickState = QG_START;
 	}
 }
 
-// a press starts a quick action when none runs; a release ends the one it started
+// grenade and melee: resolved in UpdateChord, which waits GAMEPAD_CHORD_MSEC for the other
+// (both together are the super, as Destiny's LB + RB)
 void sdGamepadControls::OnQuickGrenade( bool down ) {
-	if ( quickState == QG_IDLE || quickBank == GAMEPAD_GRENADE_BANK ) {
-		StartQuick( GAMEPAD_GRENADE_BANK, false, down );
-	}
+	PressChord( grenadeButton, down );
 }
 
 void sdGamepadControls::OnQuickMelee( bool down ) {
-	if ( quickState == QG_IDLE || quickBank == GAMEPAD_MELEE_BANK ) {
-		StartQuick( GAMEPAD_MELEE_BANK, true, down );
+	PressChord( meleeButton, down );
+}
+
+void sdGamepadControls::PressChord( chordButton_t& button, bool down ) {
+	if ( down && !button.down ) {
+		button.down = true;
+		button.pending = true;
+		button.pressTime = Now();
+	} else if ( !down ) {
+		button.down = false;
 	}
 }
 
+/*
+================
+sdGamepadControls::UpdateChord
+
+Grenade and melee pressed within GAMEPAD_CHORD_MSEC of each other are the item button
+(the super): held together for a long press, the second item. Either alone starts its
+quick action once the window has passed, or at once when it is let go first.
+================
+*/
+void sdGamepadControls::UpdateChord( int now ) {
+	if ( superChord ) {
+		grenadeButton.pending = meleeButton.pending = false;
+		if ( !grenadeButton.down || !meleeButton.down ) {
+			superChord = false;
+			OnQuickItem( false );
+		}
+		return;
+	}
+	if ( grenadeButton.pending && meleeButton.pending &&
+		idMath::Abs( grenadeButton.pressTime - meleeButton.pressTime ) <= GAMEPAD_CHORD_MSEC ) {
+		grenadeButton.pending = meleeButton.pending = false;
+		superChord = true;
+		OnQuickItem( true );
+		return;
+	}
+	if ( grenadeButton.pending && ( !grenadeButton.down || now - grenadeButton.pressTime >= GAMEPAD_CHORD_MSEC ) ) {
+		grenadeButton.pending = false;
+		if ( quickState == QG_IDLE ) {
+			StartQuick( GAMEPAD_GRENADE_BANK, false, true );
+		}
+	}
+	if ( meleeButton.pending && ( !meleeButton.down || now - meleeButton.pressTime >= GAMEPAD_CHORD_MSEC ) ) {
+		meleeButton.pending = false;
+		if ( quickState == QG_IDLE ) {
+			StartQuick( GAMEPAD_MELEE_BANK, true, true );
+		}
+	}
+	// the grenade cooks while its button is held
+	if ( quickBank == GAMEPAD_GRENADE_BANK && !grenadeButton.down ) {
+		quickHeld = false;
+	}
+}
+
+void sdGamepadControls::OnHeavy( bool down ) {
+	if ( down ) {
+		heavyPending = true;
+	}
+}
+
+// the class ability: resolved in UpdateClassAbility, which knows the class
 void sdGamepadControls::OnQuickTool( bool down ) {
-	if ( quickState == QG_IDLE || quickBank == GAMEPAD_TOOLS_BANK ) {
-		StartQuick( GAMEPAD_TOOLS_BANK, false, down );
+	if ( down && !toolHeld ) {
+		toolPressPending = true;
+	}
+	toolHeld = down;
+	if ( !down && quickBank == GAMEPAD_TOOLS_BANK ) {
+		quickHeld = false;
 	}
 }
 
+// the item: a press uses the first, a long press the second (UpdateItemButton)
 void sdGamepadControls::OnQuickItem( bool down ) {
-	if ( quickState == QG_IDLE || quickBank == GAMEPAD_ITEMS_BANK ) {
-		StartQuick( GAMEPAD_ITEMS_BANK, false, down );
+	if ( down ) {
+		if ( !itemHeld ) {
+			itemHeld = true;
+			itemActed = false;
+			itemStart = Now();
+		}
+	} else {
+		if ( itemHeld && !itemActed ) {
+			itemShortPending = true;
+		}
+		itemHeld = false;
+		if ( quickBank == GAMEPAD_ITEMS_BANK ) {
+			quickHeld = false;
+		}
+	}
+}
+
+/*
+================
+sdGamepadControls::BankWeaponAt
+
+The nth weapon of a bank the player can equip, in the order the class's kit lists them
+(Medic: the health pack, then the supply-crate marker), or -1
+================
+*/
+int sdGamepadControls::BankWeaponAt( idPlayer* player, int bank, int n ) {
+	sdInventory& inventory = player->GetInventory();
+	if ( bank < 0 || bank >= inventory.GetMaxBanks() ) {
+		return -1;
+	}
+	const int slot = inventory.GetSlotForBank( bank );
+	if ( slot == -1 ) {
+		return -1;
+	}
+	for ( int i = 0; i < inventory.GetNumItems(); i++ ) {
+		const sdDeclInvItem* item = inventory.GetItem( i );
+		if ( item == NULL || !item->UsesSlot( slot ) || !inventory.CanEquip( i, true ) ) {
+			continue;
+		}
+		if ( n-- == 0 ) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+// the first weapon of a bank whose inventory name has this text, or -1
+int sdGamepadControls::BankWeaponNamed( idPlayer* player, int bank, const char* text ) {
+	for ( int n = 0; ; n++ ) {
+		const int index = BankWeaponAt( player, bank, n );
+		if ( index == -1 ) {
+			return -1;
+		}
+		const sdDeclInvItem* item = player->GetInventory().GetItem( index );
+		if ( item != NULL && idStr::FindText( item->GetName(), text, false ) != -1 ) {
+			return index;
+		}
+	}
+}
+
+bool sdGamepadControls::WeaponNamed( idPlayer* player, int index, const char* text ) {
+	const sdDeclInvItem* item = player->GetInventory().GetItem( index );
+	return item != NULL && idStr::FindText( item->GetName(), text, false ) != -1;
+}
+
+// the player has a third-eye camera out in the world (items/third_eye.script FindCamera)
+bool sdGamepadControls::ThirdEyePlaced( idPlayer* player ) {
+	for ( int i = 0; i < player->GetBinSize(); i++ ) {
+		idEntity* other = player->GetBinEntity( i );
+		if ( other != NULL && idStr::FindText( other->GetEntityDefName(), "third_eye", false ) != -1 ) {
+			return true;
+		}
+	}
+	return false;
+}
+
+// a quick action on this weapon, pressing fire (or alt-fire) once or while the button is held
+void sdGamepadControls::StartQuickOn( int bank, int weaponIndex, bool alt, bool held, int returnTo ) {
+	quickBank = bank;
+	quickMelee = !held;
+	quickHeld = held;
+	quickTarget = weaponIndex;
+	quickAlt = alt;
+	quickReturn = returnTo;
+	quickState = QG_START;
+}
+
+/*
+================
+sdGamepadControls::UpdateItemButton
+
+The item button (Destiny's super):
+  - a press uses the class's first item (health pack, ammo pack, third eye, force
+    shield, flyer drone, charge, mine), a long press the second (supply-crate marker,
+    airstrike marker, smoke, teleporter), held while the button is; a class with one
+    item uses it either way;
+  - the third eye, once placed: a press looks through it (the item stays in hand while
+    the view is on); flying the flyer drone, likewise;
+  - looking through a camera or flying the drone: a press leaves the view (recalls the
+    drone), a long press detonates it; then back to the gun.
+================
+*/
+void sdGamepadControls::UpdateItemButton( idPlayer* player, int now ) {
+	bool press = false, longPress = false;
+	if ( itemShortPending ) {
+		itemShortPending = false;
+		press = true;
+	} else if ( itemHeld && !itemActed && now - itemStart >= in_padHoldTime.GetInteger() ) {
+		itemActed = true;
+		press = longPress = true;
+	}
+	if ( !press || quickState != QG_IDLE ) {
+		return;
+	}
+	sdInventory& inventory = player->GetInventory();
+
+	if ( stickyWeapon >= 0 && inventory.GetCurrentWeapon() == stickyWeapon && player->GetRemoteCamera() != NULL ) {
+		// in the view: a press leaves it (alt-fire), a long press detonates (fire)
+		const int back = stickyReturn;
+		stickyWeapon = -1;
+		StartQuickOn( GAMEPAD_ITEMS_BANK, inventory.GetCurrentWeapon(), !longPress, false, back );
+		return;
+	}
+
+	int target = BankWeaponAt( player, GAMEPAD_ITEMS_BANK, longPress ? 1 : 0 );
+	if ( target == -1 ) {
+		target = BankWeaponAt( player, GAMEPAD_ITEMS_BANK, 0 );
+	}
+	if ( target == -1 ) {
+		if ( in_quickDebug.GetBool() ) {
+			gameLocal.Printf( "item: none\n" );
+		}
+		return;
+	}
+	// a placed third eye: alt-fire looks through it
+	const bool view = WeaponNamed( player, target, "third_eye" ) && ThirdEyePlaced( player );
+	StartQuickOn( GAMEPAD_ITEMS_BANK, target, view, longPress && !view, -1 );
+}
+
+/*
+================
+sdGamepadControls::UpdateClassAbility
+
+The class ability button: a class with a deploy tool (Engineer, Field Ops, Covert Ops,
+Constructor, Oppressor, Infiltrator) toggles it: a press brings it out, and it stays
+until the thing is placed or the button is pressed again, then the gun comes back. The
+others hold their tool while the button is held (Soldier and Aggressor arm, Medic
+revives, Technician), as before.
+================
+*/
+void sdGamepadControls::UpdateClassAbility( idPlayer* player, int now ) {
+	sdInventory& inventory = player->GetInventory();
+	sdDeployMenu* menu = gameLocal.localPlayerProperties.GetDeployMenu();
+	const bool placing = menu != NULL && menu->Active();
+
+	if ( deployWeapon >= 0 ) {
+		if ( inventory.GetCurrentWeapon() != deployWeapon && !inventory.IsSwitchActive() && now - deployStart > 1500 ) {
+			deployWeapon = -1;	// something else took it away
+		} else if ( placing ) {
+			deploySawPlacing = true;
+		} else if ( deploySawPlacing ) {
+			// placed (or the placement was cancelled): back to the gun
+			const int back = deployReturn;
+			deployWeapon = -1;
+			QuickSwitchTo( player, back );
+		}
+	}
+
+	if ( !toolPressPending ) {
+		return;
+	}
+	toolPressPending = false;
+	if ( quickState != QG_IDLE ) {
+		return;
+	}
+	const int deployTool = BankWeaponNamed( player, GAMEPAD_TOOLS_BANK, "deploytool" );
+	if ( deployTool == -1 ) {
+		if ( toolHeld ) {
+			StartQuick( GAMEPAD_TOOLS_BANK, false, true );
+		}
+		return;
+	}
+	if ( deployWeapon >= 0 && inventory.GetCurrentWeapon() == deployWeapon ) {
+		const int back = deployReturn;
+		deployWeapon = -1;
+		QuickSwitchTo( player, back );
+		return;
+	}
+	deployReturn = inventory.GetCurrentWeapon();
+	deployWeapon = deployTool;
+	deployStart = now;
+	deploySawPlacing = false;
+	QuickSwitchTo( player, deployTool );
+}
+
+/*
+================
+sdGamepadControls::UpdateSticky
+
+An item left in hand for a remote view (the third eye, the flyer drone) goes back to
+the gun once the view ends by itself (the camera destroyed, the drone shot down)
+================
+*/
+void sdGamepadControls::UpdateSticky( idPlayer* player, int now ) {
+	if ( stickyWeapon < 0 || quickState != QG_IDLE ) {
+		return;
+	}
+	sdInventory& inventory = player->GetInventory();
+	if ( inventory.GetCurrentWeapon() != stickyWeapon && !inventory.IsSwitchActive() ) {
+		stickyWeapon = -1;	// the player moved on
+		return;
+	}
+	if ( player->GetRemoteCamera() == NULL && now - stickyStart > 1500 ) {
+		const int back = stickyReturn;
+		stickyWeapon = -1;
+		QuickSwitchTo( player, back );
+	}
+}
+
+// Y held: the binoculars, Destiny's heavy weapon (Field Ops and Oppressor aim their
+// artillery with them); it stays in hand like a gun until the next swap
+void sdGamepadControls::SelectHeavy( idPlayer* player ) {
+	const int binoculars = BankWeaponAt( player, GAMEPAD_BINOCS_BANK, 0 );
+	if ( binoculars != -1 && quickState == QG_IDLE ) {
+		QuickSwitchTo( player, binoculars );
 	}
 }
 
@@ -578,6 +892,8 @@ void sdGamepadControls::OnCrouchProne( bool down ) {
 	} else {
 		if ( crouchHeld && !crouchActed ) {
 			crouchStandPending = true;	// a tap: resolved in UsercommandCallback, which knows the stance
+		} else if ( crouchHeld && crouchActed ) {
+			OnQuickTool( false );		// the class ability's hold ends
 		}
 		crouchHeld = false;
 	}
@@ -592,8 +908,6 @@ void sdGamepadControls::OnSwapWeapon( bool down ) {
 		if ( swapHeld && !swapActed ) {
 			swapActed = true;
 			swapPending = true;
-		} else if ( swapHeld && quickBank == GAMEPAD_ITEMS_BANK ) {
-			OnQuickItem( false );
 		}
 		swapHeld = false;
 	}
@@ -678,6 +992,14 @@ void sdGamepadControls::UsercommandCallback( idPlayer* player, usercmd_t& cmd ) 
 		crouchLatched = false;
 		crouchStandPending = false;
 		quickState = QG_IDLE;
+		itemShortPending = false;
+		itemActed = true;
+		toolPressPending = false;
+		grenadeButton.pending = meleeButton.pending = false;
+		superChord = false;
+		heavyPending = false;
+		deployWeapon = -1;
+		stickyWeapon = -1;
 		if ( proxy != NULL ) {
 			if ( zoomWanted && !drivingWithTriggers ) {
 				cmd.buttons.btn.altAttack = true;
@@ -697,10 +1019,10 @@ void sdGamepadControls::UsercommandCallback( idPlayer* player, usercmd_t& cmd ) 
 	}
 	if ( swapHeld && !swapActed && now - swapStart >= in_padHoldTime.GetInteger() ) {
 		swapActed = true;
-		OnQuickItem( true );	// the item while Y stays held (OnSwapWeapon lets it go)
+		SelectHeavy( player );
 	}
 
-	// B: crouch while held, a tap toggles the crouch latch, a hold goes prone
+	// B: crouch while held, a tap toggles the crouch latch (and stands up from prone)
 	const bool prone = player->GetPlayerPhysics().IsProne();
 	if ( crouchStandPending ) {
 		crouchStandPending = false;
@@ -711,12 +1033,12 @@ void sdGamepadControls::UsercommandCallback( idPlayer* player, usercmd_t& cmd ) 
 			crouchLatched = !crouchLatched;
 		}
 	}
+	// B held: the class ability (Destiny's hold B), as the class ability button
 	if ( crouchHeld && !crouchActed && now - crouchStart >= in_padHoldTime.GetInteger() + 100 ) {
 		crouchActed = true;
 		crouchLatched = false;
-		if ( !prone ) {
-			player->PerformImpulse( UCI_PRONE );
-		}
+		OnQuickTool( true );
+		UpdateClassAbility( player, now );
 	}
 	if ( cmd.upmove > 0 || padSprint ) {
 		crouchLatched = false;	// a jump or a sprint stands up
@@ -735,7 +1057,15 @@ void sdGamepadControls::UsercommandCallback( idPlayer* player, usercmd_t& cmd ) 
 		}
 	}
 
+	UpdateChord( now );
+	if ( heavyPending ) {
+		heavyPending = false;
+		SelectHeavy( player );
+	}
+	UpdateItemButton( player, now );
+	UpdateClassAbility( player, now );
 	UpdateQuick( player, cmd, now );
+	UpdateSticky( player, now );
 	UpdateZoomHold( player, cmd, now );
 }
 
@@ -788,14 +1118,14 @@ void sdGamepadControls::UpdateQuick( idPlayer* player, usercmd_t& cmd, int now )
 			return;
 
 		case QG_START: {
-			const int target = BankWeapon( player, quickBank );
+			const int target = quickTarget >= 0 ? quickTarget : BankWeapon( player, quickBank );
 			if ( target == -1 ) {
 				SetQuickState( QG_IDLE, "nothing usable in that bank" );
 				return;
 			}
 			quickPrevWeapon = inventory.GetCurrentWeapon();
 			if ( target == quickPrevWeapon ) {
-				quickPrevWeapon = -1;	// already in hand: just use it
+				quickPrevWeapon = quickReturn;	// already in hand: just use it
 			} else {
 				QuickSwitchTo( player, target );
 			}
@@ -807,8 +1137,9 @@ void sdGamepadControls::UpdateQuick( idPlayer* player, usercmd_t& cmd, int now )
 		case QG_SWITCHING: {
 			// GetCurrentSlot is the bank of the weapon being brought up
 			idWeapon* weapon = player->GetWeapon();
+			const int wanted = quickTarget >= 0 ? quickTarget : inventory.GetCurrentWeapon();
 			const bool inHand = inventory.GetCurrentSlot() == quickBank && !inventory.IsSwitchActive() &&
-				player->GetInventory().GetCurrentWeapon() >= 0 && weapon != NULL && weapon->IsReady();
+				inventory.GetCurrentWeapon() == wanted && wanted >= 0 && weapon != NULL && weapon->IsReady();
 			if ( inHand ) {
 				SetQuickState( QG_FIRING, "up" );
 				quickFireStart = now;
@@ -823,12 +1154,17 @@ void sdGamepadControls::UpdateQuick( idPlayer* player, usercmd_t& cmd, int now )
 		}
 
 		case QG_FIRING: {
-			cmd.buttons.btn.attack = true;
+			if ( quickAlt ) {
+				cmd.buttons.btn.altAttack = true;
+			} else {
+				cmd.buttons.btn.attack = true;
+			}
 			const bool minimumHeld = now - quickFireStart >= GAMEPAD_QUICK_MIN_FIRE_MSEC;
 			if ( minimumHeld && ( quickMelee || !quickHeld ) ) {
 				SetQuickState( QG_DONE, quickMelee ? "swung" : "released" );
 				quickDeadline = now + 2000;
 				cmd.buttons.btn.attack = false;
+				cmd.buttons.btn.altAttack = false;
 			}
 			return;
 		}
@@ -836,8 +1172,19 @@ void sdGamepadControls::UpdateQuick( idPlayer* player, usercmd_t& cmd, int now )
 		case QG_DONE: {
 			// back once the throw or swing is over and the weapon is ready again
 			idWeapon* weapon = player->GetWeapon();
-			const bool done = inventory.GetCurrentSlot() != quickBank || ( weapon != NULL && weapon->IsReady() && now - quickFireStart > 300 );
+			// a camera view comes on 0.4 s after alt-fire (items/third_eye.script)
+			const int settle = quickAlt ? 900 : 300;
+			const bool done = inventory.GetCurrentSlot() != quickBank || ( weapon != NULL && weapon->IsReady() && now - quickFireStart > settle );
 			if ( !done && now <= quickDeadline ) {
+				return;
+			}
+			if ( player->GetRemoteCamera() != NULL && inventory.GetCurrentSlot() == quickBank ) {
+				// looking through the third eye or flying the drone: the item stays in hand
+				SetQuickState( QG_IDLE, "remote view" );
+				stickyWeapon = inventory.GetCurrentWeapon();
+				stickyReturn = quickPrevWeapon;
+				stickyStart = now;
+				quickPrevWeapon = -1;
 				return;
 			}
 			SetQuickState( QG_IDLE, "back" );

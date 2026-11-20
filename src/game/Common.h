@@ -291,7 +291,8 @@ enum usercmdLocalImpulse_t {
 	ULI_INTERACT = 32,			// keyboard (Destiny): use, enter and leave vehicles
 	ULI_QUICK_TOOL = 33,		// the class tool while held, then back to the gun
 	ULI_QUICK_ITEM = 34,		// the item while held, then back to the gun
-	ULI_NUM_IMPULSES = 35,
+	ULI_HEAVY = 35,				// the binoculars, Destiny's heavy weapon
+	ULI_NUM_IMPULSES = 36,
 };
 
 typedef idList< const sdDeclInvItem* > sdDeclItemPackageItems;
