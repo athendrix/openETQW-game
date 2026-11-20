@@ -11,6 +11,9 @@ static char THIS_FILE[] = __FILE__;
 #endif
 
 #include "InputMode.h"
+#include "GamepadControls.h"
+
+extern idCVar in_aim_invertPitch;	// GamepadControls.cpp: one pitch inversion for every pad mode
 
 /*
 ===============================================================================
@@ -161,6 +164,14 @@ INPUTMODE_AXIS_DECLARE_DEF_INVERT( sdInputModePlayer, player,  side, 0, 0 );
 =======================================
 */
 void sdInputModePlayer::ControllerMove( bool doGameCallback, const int controllerNum, const float* controllerAxis, idVec3& viewAngles, usercmd_t& cmd ) {
+	// OpenETQW: the first gamepad aims and moves with GamepadControls.cpp (radial dead zones,
+	// a response curve, a turn ramp, aim assist and gyro); further pads keep the SDK's
+	// per-axis handling below.
+	if ( controllerNum == 1 ) {
+		sdGamepadControls::GetInstance().PlayerControllerMove( doGameCallback, controllerNum, controllerAxis, viewAngles, cmd );
+		return;
+	}
+
 	INPUTMODE_AXIS_EVALUATE( sdInputModePlayer, pitch, controllerAxis );	
 	INPUTMODE_AXIS_EVALUATE( sdInputModePlayer, forward, controllerAxis );
 	INPUTMODE_AXIS_EVALUATE( sdInputModePlayer, yaw, controllerAxis );
@@ -204,7 +215,7 @@ void sdInputModePlayer::ControllerMove( bool doGameCallback, const int controlle
 
 INPUTMODE_AXIS_DECLARE_DEF_INVERT( sdInputModeCar, car, throttle, 1, 1  );
 INPUTMODE_AXIS_DECLARE_DEF_INVERT( sdInputModeCar, car, steering, 0, 0 );
-INPUTMODE_AXIS_DECLARE_DEFAULTS( sdInputModeCar, car, pitch , 3, 0.2, 230, 1, 0, 4 );
+INPUTMODE_AXIS_DECLARE_DEFAULTS( sdInputModeCar, car, pitch , 3, 0.2, 230, 0, 0, 4 );	// OpenETQW: stick down looks down (in_aim_invertPitch flips it)
 INPUTMODE_AXIS_DECLARE_DEFAULTS( sdInputModeCar, car, yaw, 2, 0.2, 230, 1, 0, 4 );
 
 /*
@@ -217,6 +228,9 @@ void sdInputModeCar::ControllerMove( bool doGameCallback, const int controllerNu
 	INPUTMODE_AXIS_EVALUATE( sdInputModeCar, steering, controllerAxis );
 	INPUTMODE_AXIS_EVALUATE( sdInputModeCar, pitch, controllerAxis );
 	INPUTMODE_AXIS_EVALUATE( sdInputModeCar, yaw, controllerAxis );
+	if ( in_aim_invertPitch.GetBool() ) {
+		pitch = -pitch;
+	}
 
 	float	angleSpeedYaw;
 	float	angleSpeedPitch;
@@ -310,7 +324,7 @@ void sdInputModeHeli::ControllerMove( bool doGameCallback, const int controllerN
 
 INPUTMODE_AXIS_DECLARE_DEF_INVERT( sdInputModeHovertank, hovertank, forward, 1, 1  );
 INPUTMODE_AXIS_DECLARE_DEF_INVERT( sdInputModeHovertank, hovertank, turn, 0, 0 );
-INPUTMODE_AXIS_DECLARE_DEFAULTS( sdInputModeHovertank, hovertank, pitch , 3, 0.2, 230, 1, 0, 4 );
+INPUTMODE_AXIS_DECLARE_DEFAULTS( sdInputModeHovertank, hovertank, pitch , 3, 0.2, 230, 0, 0, 4 );	// OpenETQW: stick down looks down (in_aim_invertPitch flips it)
 INPUTMODE_AXIS_DECLARE_DEFAULTS( sdInputModeHovertank, hovertank, yaw, 2, 0.2, 230, 1, 0, 4 );
 INPUTMODE_AXIS_DECLARE_DEF_AXIS( sdInputModeHovertank, hovertank, side, -1 );
 
@@ -325,6 +339,9 @@ void sdInputModeHovertank::ControllerMove( bool doGameCallback, const int contro
 	INPUTMODE_AXIS_EVALUATE( sdInputModeHovertank, side, controllerAxis );
 	INPUTMODE_AXIS_EVALUATE( sdInputModeHovertank, turn, controllerAxis );
 	INPUTMODE_AXIS_EVALUATE( sdInputModeHovertank, pitch, controllerAxis );
+	if ( in_aim_invertPitch.GetBool() ) {
+		pitch = -pitch;
+	}
 	INPUTMODE_AXIS_EVALUATE( sdInputModeHovertank, yaw, controllerAxis );
 
 	float	angleSpeedYaw;

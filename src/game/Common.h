@@ -280,7 +280,12 @@ enum usercmdLocalImpulse_t {
 	ULI_MENU_NEWLINE = 21,
 	ULI_MENU_EVENT_CONTEXT = 22,
 	ULI_SHOW_FIRETEAM = 23,
-	ULI_NUM_IMPULSES = 24,
+	ULI_ZOOM_HOLD = 24,			// gamepad: hold to zoom (GamepadControls.h)
+	ULI_QUICK_GRENADE = 25,		// gamepad: throw a grenade and switch back
+	ULI_PAD_SPRINT = 26,		// gamepad: sprint until the stick comes back
+	ULI_QUICK_MELEE = 27,		// gamepad: one melee swing and switch back
+	ULI_RELOAD_USE = 28,		// gamepad: tap to reload, hold to use
+	ULI_NUM_IMPULSES = 29,
 };
 
 typedef idList< const sdDeclInvItem* > sdDeclItemPackageItems;

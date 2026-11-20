@@ -10,6 +10,7 @@
 static char THIS_FILE[] = __FILE__;
 #endif
 
+#include "GamepadControls.h"
 #include "Player.h"
 #include "CommandMapInfo.h"
 #include "Weapon.h"
@@ -2131,6 +2132,10 @@ void idPlayer::UsercommandCallback( usercmd_t& cmd ) {
 	if ( gameLocal.IsPaused() && g_pauseNoClip.GetBool() ) {
 		gameLocal.UpdatePauseNoClip( cmd );
 	}
+
+	// gamepad hold to zoom and quick grenade: synthetic fire and alt-fire presses, before the
+	// HUD modules and the weapon lock below get their say on the buttons
+	sdGamepadControls::GetInstance().UsercommandCallback( this, cmd );
 
 	if ( clientButtonsUsed ) {
 		clientOldButtons	= clientButtons;

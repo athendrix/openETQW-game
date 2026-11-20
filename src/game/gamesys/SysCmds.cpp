@@ -4040,6 +4040,8 @@ void idGameLocal::InitConsoleCommands( void ) {
 	cmdSystem->AddCommand( "kill",					Cmd_Kill_f,					CMD_FL_GAME,				"kills the player" );
 	cmdSystem->AddCommand( "toggleLimbo",			Cmd_ToggleLimbo_f,			CMD_FL_GAME,				"toggle limbo menu" );
 	cmdSystem->AddCommand( "closeLimbo",			Cmd_CloseLimbo_f,			CMD_FL_GAME,				"close limbo menu" );
+	void Gamepad_RegisterCommands( void );	// GamepadControls.cpp
+	Gamepad_RegisterCommands();
 	cmdSystem->AddCommand( "playerPos",				Cmd_PlayerPos_f,			CMD_FL_GAME,				"prints current player position, velocity, and stance" );
 	cmdSystem->AddCommand( "botThreadStats",		Cmd_BotThreadStats_f,		CMD_FL_GAME,				"prints bot think frame pacing statistics" );
 #ifdef SD_PRIVATE_BETA_BUILD

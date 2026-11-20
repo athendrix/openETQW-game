@@ -80,6 +80,7 @@ idCVar* idCVar::staticVars;
 #include "script/ScriptEntityHelpers.h"
 #include "script/Script_ScriptObject.h"
 #include "script/Script_DLL.h"
+#include "GamepadControls.h"
 
 #include "../framework/AdManager.h"
 #include "../framework/GraphManager.h"
@@ -10106,6 +10107,11 @@ userCmdString_t	userCmdStrings[] = {
 	{ "_context",			B_LOCAL_IMPULSE,	ULI_CONTEXT },
 	{ "_showwaypoints",		B_LOCAL_IMPULSE,	ULI_SHOW_WAYPOINTS },
 	{ "_showFireTeam",		B_LOCAL_IMPULSE,	ULI_SHOW_FIRETEAM },
+	{ "_zoomhold",			B_LOCAL_IMPULSE,	ULI_ZOOM_HOLD },
+	{ "_quickgrenade",		B_LOCAL_IMPULSE,	ULI_QUICK_GRENADE },
+	{ "_padsprint",			B_LOCAL_IMPULSE,	ULI_PAD_SPRINT },
+	{ "_quickmelee",		B_LOCAL_IMPULSE,	ULI_QUICK_MELEE },
+	{ "_reloaduse",			B_LOCAL_IMPULSE,	ULI_RELOAD_USE },
 };
 
 const int NUM_USERCMD_STRING = sizeof( userCmdStrings ) / sizeof( userCmdStrings[ 0 ] );
@@ -10136,6 +10142,31 @@ idGameLocal::HandleLocalImpulse
 */
 void idGameLocal::HandleLocalImpulse( int action, bool down ) {
 	switch ( action ) {
+		case ULI_ZOOM_HOLD: {
+			sdGamepadControls::GetInstance().OnZoomHold( down );
+			break;
+		}
+
+		case ULI_QUICK_GRENADE: {
+			sdGamepadControls::GetInstance().OnQuickGrenade( down );
+			break;
+		}
+
+		case ULI_PAD_SPRINT: {
+			sdGamepadControls::GetInstance().OnPadSprint( down );
+			break;
+		}
+
+		case ULI_QUICK_MELEE: {
+			sdGamepadControls::GetInstance().OnQuickMelee( down );
+			break;
+		}
+
+		case ULI_RELOAD_USE: {
+			sdGamepadControls::GetInstance().OnReloadUse( down );
+			break;
+		}
+
 		case ULI_COMMAND_MAP: {
 			if ( down ) {
 				localPlayerProperties.ToggleCommandMap();
