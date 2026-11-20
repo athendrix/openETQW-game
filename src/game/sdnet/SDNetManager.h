@@ -219,6 +219,9 @@ public:
 	void							PerformCommand( const idCmdArgs& cmd );
 
 	sdNetSession*					GetSession( float fSource, int index );
+	static idStr					FavoriteIdentity( const char* value );
+	static bool						IsFavoriteSession( const idDict& properties, const sdNetSession& netSession );
+	const sdNetSession*				FindSessionByAddress( const char* address ) const;
 
 	void							UpdateServer( sdUIList& list, const char* sessionName, findServerSource_e source );
 #if !defined( SD_DEMO_BUILD )

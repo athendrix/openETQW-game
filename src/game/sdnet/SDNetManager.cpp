@@ -1678,7 +1678,7 @@ void sdNetManager::UpdateSession( sdUIList& list, const sdNetSession& netSession
 		return;
 	}
 	sdNetUser* activeUser = networkService->GetActiveUser();
-	bool favorite = activeUser->GetProfile().GetProperties().GetBool( va( "favorite_%s", netSession.GetHostAddressString() ), "0" );
+	bool favorite = IsFavoriteSession( activeUser->GetProfile().GetProperties(), netSession );
 
 	// Favorite state
 	sdUIList::SetItemText( &list, favorite ? L"<material = 'favorite_set'>f" : L"<material = 'favorite_unset'>", index, BC_FAVORITE );
@@ -4615,7 +4615,7 @@ bool sdNetManager::SessionIsFiltered( const sdNetSession& netSession, bool ignor
 				value = netSession.GetNumBotClients();
 				break;
 			case SF_FAVORITE:
-				value = activeUser->GetProfile().GetProperties().GetBool( va( "favorite_%s", netSession.GetHostAddressString() ), "0" );
+				value = IsFavoriteSession( activeUser->GetProfile().GetProperties(), netSession );
 				break;
 #if !defined( SD_DEMO_BUILD ) && !defined( SD_DEMO_BUILD_CONSTRUCTION )
 			case SF_RANKED:
@@ -5399,6 +5399,62 @@ void sdNetManager::Script_StopFindingServers( sdUIFunctionStack& stack ) {
 
 /*
 ============
+sdNetManager::FavoriteIdentity
+
+A favorite's value is "1", or "1 <identity>" once the server's identity is known (its
+si_id; the engine's browser fills it in, openETQW src/sdnet/SDNetBrowser.cpp). Returns
+the identity, or an empty string.
+============
+*/
+idStr sdNetManager::FavoriteIdentity( const char* value ) {
+	const char* space = strchr( value, ' ' );
+	return space != NULL ? idStr( space + 1 ) : idStr();
+}
+
+/*
+============
+sdNetManager::IsFavoriteSession
+
+A server is a favorite when its address is, or when it is the server saved under another
+address (the same identity: the server on the LAN and on the Internet, or after it moved).
+============
+*/
+bool sdNetManager::IsFavoriteSession( const idDict& properties, const sdNetSession& netSession ) {
+	if ( properties.GetBool( va( "favorite_%s", netSession.GetHostAddressString() ), "0" ) ) {
+		return true;
+	}
+	const char* identity = netSession.GetServerInfo().GetString( "si_id" );
+	if ( identity[ 0 ] == '\0' ) {
+		return false;
+	}
+	for ( const idKeyValue* kv = properties.MatchPrefix( "favorite_" ); kv != NULL; kv = properties.MatchPrefix( "favorite_", kv ) ) {
+		if ( FavoriteIdentity( kv->GetValue().c_str() ).Icmp( identity ) == 0 ) {
+			return true;
+		}
+	}
+	return false;
+}
+
+/*
+============
+sdNetManager::FindSessionByAddress
+============
+*/
+const sdNetSession* sdNetManager::FindSessionByAddress( const char* address ) const {
+	const idList< sdNetSession* >* lists[] = { &sessions, &sessionsLAN, &sessionsHistory, &sessionsFavorites };
+	for ( int l = 0; l < static_cast< int >( sizeof( lists ) / sizeof( lists[ 0 ] ) ); l++ ) {
+		for ( int i = 0; i < lists[ l ]->Num(); i++ ) {
+			const sdNetSession* session = ( *lists[ l ] )[ i ];
+			if ( session != NULL && idStr::Icmp( session->GetHostAddressString(), address ) == 0 ) {
+				return session;
+			}
+		}
+	}
+	return NULL;
+}
+
+/*
+============
 sdNetManager::Script_ToggleServerFavoriteState
 ============
 */
@@ -5410,15 +5466,31 @@ void sdNetManager::Script_ToggleServerFavoriteState( sdUIFunctionStack& stack ) 
 
 	sdNetUser* activeUser = networkService->GetActiveUser();
 
+	idDict& properties = activeUser->GetProfile().GetProperties();
 	idStr key = va( "favorite_%s", sessionName.c_str() );
-	bool set = activeUser->GetProfile().GetProperties().GetBool( key.c_str(), "0" );
+
+	// the server's identity (si_id), when it sent one: a favorite follows the server to
+	// its other addresses (the engine's browser keeps them)
+	const sdNetSession* session = FindSessionByAddress( sessionName.c_str() );
+	const char* identity = session != NULL ? session->GetServerInfo().GetString( "si_id" ) : "";
+
+	bool set = properties.GetBool( key.c_str(), "0" ) || ( session != NULL && IsFavoriteSession( properties, *session ) );
 	set = !set;
 	if( !set ) {
-		activeUser->GetProfile().GetProperties().Delete( key.c_str() );
+		properties.Delete( key.c_str() );
+		// and the server's other addresses
+		if ( identity[ 0 ] != '\0' ) {
+			for ( int i = properties.GetNumKeyVals() - 1; i >= 0; i-- ) {
+				const idKeyValue* kv = properties.GetKeyVal( i );
+				if ( kv->GetKey().Icmpn( "favorite_", 9 ) == 0 && FavoriteIdentity( kv->GetValue().c_str() ).Icmp( identity ) == 0 ) {
+					properties.Delete( kv->GetKey().c_str() );
+				}
+			}
+		}
 		common->DPrintf( "Removed '%s' as a favorite\n", sessionName.c_str() ) ;
 	} else {
 		common->DPrintf( "Added '%s' as a favorite\n", sessionName.c_str() ) ;
-		activeUser->GetProfile().GetProperties().SetBool( key.c_str(), true );
+		properties.Set( key.c_str(), identity[ 0 ] != '\0' ? va( "1 %s", identity ) : "1" );
 	}
 	activeUser->Save( sdNetUser::SI_PROFILE );
 }
