@@ -199,6 +199,8 @@ public:
 	void					EndAltFire( void );
 
 	bool					IsReady( void ) const;
+	// the script state it is in or going to ("Idle", "Fire", "Raise", ...)
+	const char*				GetScriptState( void ) const { return idealState.Length() ? idealState.c_str() : state.c_str(); }
 	bool					IsReloading( void ) const;
 	bool					IsHolstered( void ) const;
 	void					InstantSwitch( void );

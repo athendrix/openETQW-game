@@ -165,6 +165,7 @@ private:
 	int							quickReturn;		// the weapon to come back to when the target was in hand
 	idEntityPtr< idEntity >		quickArm;			// arming this mine or charge
 	bool						quickArmWas;
+	bool						quickSawAction;		// the weapon's script left its idle state (fired)
 
 	// the item button: press and long press
 	bool						itemHeld;

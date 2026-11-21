@@ -9481,23 +9481,39 @@ idPlayer::ServerUseObject
 ================
 */
 void idPlayer::ServerUseObject( void ) {
+	extern idCVar in_quickDebug;
+	const bool debug = in_quickDebug.GetBool() && gameLocal.IsLocalPlayer( this );
 	idEntity* proxy = GetProxyEntity();
 	if ( proxy ) {
 		sdInteractiveInterface* iface = proxy->GetInteractiveInterface();
 		if ( iface && iface->OnUsed( this, 0.f ) ) {
+			if ( debug ) {
+				gameLocal.Printf( "use: the vehicle in took it (%s)\n", proxy->GetName() );
+			}
 			return;
 		}
 	}
 
 	if ( remoteCamera.GetEntity() != NULL ) {
+		if ( debug ) {
+			gameLocal.Printf( "use: ignored, looking through a remote camera\n" );
+		}
 		return;
 	}
 
 	idWeapon* weapon = GetWeapon();
 	if ( weapon && weapon->OnUsed( this, 0.f ) ) {
+		if ( debug ) {
+			gameLocal.Printf( "use: the weapon in hand took it\n" );
+		}
 		return;
 	}
 
+	if ( debug ) {
+		idEntity* ent = crosshairInfo.GetEntity();
+		gameLocal.Printf( "use: crosshair %s, use valid %d, distance %.0f\n", ent != NULL ? ent->GetName() : "nothing",
+			crosshairInfo.IsUseValid() ? 1 : 0, crosshairInfo.GetDistance() );
+	}
 	if ( crosshairInfo.IsUseValid() ) {
 		idEntity* crosshairEnt = crosshairInfo.GetEntity();
 		if ( crosshairEnt ) {

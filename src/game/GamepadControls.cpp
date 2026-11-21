@@ -165,6 +165,7 @@ void sdGamepadControls::Reset( void ) {
 	quickReturn = -1;
 	quickArm = NULL;
 	quickArmWas = false;
+	quickSawAction = false;
 	itemHeld = false;
 	itemActed = false;
 	itemShortPending = false;
@@ -458,6 +459,7 @@ void sdGamepadControls::StartQuick( int bank, bool melee, bool down ) {
 		quickAlt = false;
 		quickReturn = -1;
 		quickArm = NULL;
+		quickSawAction = false;
 		quickState = QG_START;
 	}
 }
@@ -672,6 +674,7 @@ void sdGamepadControls::StartQuickOn( int bank, int weaponIndex, bool alt, bool 
 	quickAlt = alt;
 	quickReturn = returnTo;
 	quickArm = NULL;
+	quickSawAction = false;
 	quickState = QG_START;
 }
 
@@ -1093,6 +1096,9 @@ void sdGamepadControls::UpdateTapHold( idPlayer* player, usercmd_t& cmd, int now
 			reloadUseActed = true;
 			if ( !usedVehicleThisPress ) {
 				usedVehicleThisPress = true;
+				if ( in_quickDebug.GetBool() ) {
+					gameLocal.Printf( "interact: use (enter a vehicle)\n" );
+				}
 				player->PerformImpulse( UCI_USE_VEHICLE );
 			}
 		} else if ( held ) {
@@ -1302,6 +1308,12 @@ void sdGamepadControls::UpdateQuick( idPlayer* player, usercmd_t& cmd, int now )
 		}
 
 		case QG_FIRING: {
+			{
+				idWeapon* firing = player->GetWeapon();
+				if ( firing != NULL && idStr::FindText( firing->GetScriptState(), "Idle", false ) == -1 ) {
+					quickSawAction = true;	// the throw or swing started
+				}
+			}
 			if ( quickAlt ) {
 				cmd.buttons.btn.altAttack = true;
 			} else {
@@ -1327,7 +1339,7 @@ void sdGamepadControls::UpdateQuick( idPlayer* player, usercmd_t& cmd, int now )
 			}
 			if ( minimumHeld && ( quickMelee || !quickHeld ) ) {
 				SetQuickState( QG_DONE, quickMelee ? "swung" : "released" );
-				quickDeadline = now + 2000;
+				quickDeadline = now + 3000;
 				cmd.buttons.btn.attack = false;
 				cmd.buttons.btn.altAttack = false;
 			}
@@ -1337,9 +1349,16 @@ void sdGamepadControls::UpdateQuick( idPlayer* player, usercmd_t& cmd, int now )
 		case QG_DONE: {
 			// back once the throw or swing is over and the weapon is ready again
 			idWeapon* weapon = player->GetWeapon();
-			// a camera view comes on 0.4 s after alt-fire (items/third_eye.script)
-			const int settle = quickAlt ? 900 : 300;
-			const bool done = inventory.GetCurrentSlot() != quickBank || ( weapon != NULL && weapon->IsReady() && now - quickFireStart > settle );
+			// the weapon stays "ready" (WP_READY) through its fire state, so the throw or
+			// swing is over once its script is back in an idle state; a camera view comes
+			// on 0.4 s after alt-fire (items/third_eye.script), which no state change shows
+			const char* scriptState = weapon != NULL ? weapon->GetScriptState() : "";
+			if ( idStr::FindText( scriptState, "Idle", false ) == -1 ) {
+				quickSawAction = true;
+			}
+			const bool idle = weapon != NULL && weapon->IsReady() && idStr::FindText( scriptState, "Idle", false ) != -1;
+			const bool settled = quickAlt ? now - quickFireStart > 900 : ( quickSawAction && now - quickFireStart > 300 );
+			const bool done = inventory.GetCurrentSlot() != quickBank || ( idle && settled );
 			if ( !done && now <= quickDeadline ) {
 				return;
 			}
@@ -1364,6 +1383,9 @@ void sdGamepadControls::UpdateQuick( idPlayer* player, usercmd_t& cmd, int now )
 				}
 				quickPrevWeapon = -1;
 				return;
+			}
+			if ( in_quickDebug.GetBool() ) {
+				gameLocal.Printf( "quick: weapon state '%s', saw action %d\n", scriptState, quickSawAction ? 1 : 0 );
 			}
 			SetQuickState( QG_IDLE, "back" );
 			if ( quickPrevWeapon >= 0 ) {
