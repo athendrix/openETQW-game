@@ -78,8 +78,10 @@ const int GAMEPAD_SIDEARM_BANK = 1;
 const int GAMEPAD_PRIMARY_BANK = 2;
 // the binoculars (_weapon6): Destiny's heavy weapon here
 const int GAMEPAD_BINOCS_BANK = 6;
+// the longest the super holds the pliers on a mine (arming takes about 2 s)
+const int GAMEPAD_ARM_MSEC = 6000;
 // how long something other than a gun may sit ready in hand before the gun comes back
-const int GAMEPAD_RETURN_MSEC = 1000;
+const int GAMEPAD_RETURN_MSEC = 2000;
 // grenade and melee pressed this close together are the super (the item)
 const int GAMEPAD_CHORD_MSEC = 100;
 
@@ -161,6 +163,8 @@ void sdGamepadControls::Reset( void ) {
 	quickTarget = -1;
 	quickAlt = false;
 	quickReturn = -1;
+	quickArm = NULL;
+	quickArmWas = false;
 	itemHeld = false;
 	itemActed = false;
 	itemShortPending = false;
@@ -453,6 +457,7 @@ void sdGamepadControls::StartQuick( int bank, bool melee, bool down ) {
 		quickTarget = -1;
 		quickAlt = false;
 		quickReturn = -1;
+		quickArm = NULL;
 		quickState = QG_START;
 	}
 }
@@ -615,6 +620,49 @@ bool sdGamepadControls::ThirdEyePlaced( idPlayer* player ) {
 	return false;
 }
 
+/*
+================
+sdGamepadControls::ArmableInView
+
+A mine or charge of the player's team under the crosshair, in reach, that still needs
+arming (a mine's script keeps LM_NONE, 0, in "mode" until it is armed), or NULL
+================
+*/
+idEntity* sdGamepadControls::ArmableInView( idPlayer* player ) {
+	const sdCrosshairInfo& info = player->GetCrosshairInfo( true );
+	idEntity* other = info.IsValid() ? info.GetEntity() : NULL;
+	if ( other == NULL || other->GetGameTeam() == NULL || other->GetGameTeam() != player->GetGameTeam() ) {
+		return NULL;
+	}
+	if ( ( other->GetPhysics()->GetOrigin() - player->GetPhysics()->GetOrigin() ).LengthSqr() > Square( 160.0f ) ) {
+		return NULL;
+	}
+	const char* defName = other->GetEntityDefName();
+	if ( idStr::FindText( defName, "landmine", false ) != -1 ) {
+		idScriptObject* object = other->GetScriptObject();
+		const float* mode = object != NULL ? reinterpret_cast< const float* >( object->GetVariable( "mode", ev_float ) ) : NULL;
+		return mode == NULL || *mode == 0.0f ? other : NULL;
+	}
+	if ( idStr::FindText( defName, "charge", false ) != -1 ) {
+		return other;
+	}
+	return NULL;
+}
+
+// the class's arming tool: the pliers (not the hacking pair) or the Aggressor's spike
+int sdGamepadControls::ArmingTool( idPlayer* player ) {
+	for ( int n = 0; ; n++ ) {
+		const int index = BankWeaponAt( player, GAMEPAD_TOOLS_BANK, n );
+		if ( index == -1 ) {
+			return -1;
+		}
+		if ( ( WeaponNamed( player, index, "pliers" ) && !WeaponNamed( player, index, "hack" ) ) ||
+			WeaponNamed( player, index, "spike/charge" ) ) {
+			return index;
+		}
+	}
+}
+
 // a quick action on this weapon, pressing fire (or alt-fire) once or while the button is held
 void sdGamepadControls::StartQuickOn( int bank, int weaponIndex, bool alt, bool held, int returnTo ) {
 	quickBank = bank;
@@ -623,6 +671,7 @@ void sdGamepadControls::StartQuickOn( int bank, int weaponIndex, bool alt, bool 
 	quickTarget = weaponIndex;
 	quickAlt = alt;
 	quickReturn = returnTo;
+	quickArm = NULL;
 	quickState = QG_START;
 }
 
@@ -660,6 +709,15 @@ void sdGamepadControls::UpdateItemButton( idPlayer* player, int now ) {
 		const int back = stickyReturn;
 		stickyWeapon = -1;
 		StartQuickOn( GAMEPAD_ITEMS_BANK, inventory.GetCurrentWeapon(), !longPress, false, back );
+		return;
+	}
+
+	// facing the team's mine or charge that still needs arming: the pliers arm it
+	idEntity* armable = ArmableInView( player );
+	const int armingTool = armable != NULL ? ArmingTool( player ) : -1;
+	if ( armingTool != -1 ) {
+		StartQuickOn( GAMEPAD_TOOLS_BANK, armingTool, false, true, -1 );
+		quickArm = armable;
 		return;
 	}
 
@@ -1250,6 +1308,23 @@ void sdGamepadControls::UpdateQuick( idPlayer* player, usercmd_t& cmd, int now )
 				cmd.buttons.btn.attack = true;
 			}
 			const bool minimumHeld = now - quickFireStart >= GAMEPAD_QUICK_MIN_FIRE_MSEC;
+			if ( quickArm.IsValid() || quickArmWas ) {
+				// arming: fire stays held until the mine is armed, the crosshair leaves it or
+				// GAMEPAD_ARM_MSEC passes (a charge: until the button is let go)
+				quickArmWas = true;
+				idEntity* armable = ArmableInView( player );
+				const bool stillArming = quickArm.IsValid() && armable == quickArm.GetEntity() &&
+					now - quickFireStart < GAMEPAD_ARM_MSEC &&
+					( quickHeld || idStr::FindText( armable->GetEntityDefName(), "landmine", false ) != -1 );
+				if ( !stillArming && minimumHeld ) {
+					quickArmWas = false;
+					quickArm = NULL;
+					SetQuickState( QG_DONE, "armed" );
+					quickDeadline = now + 2000;
+					cmd.buttons.btn.attack = false;
+				}
+				return;
+			}
 			if ( minimumHeld && ( quickMelee || !quickHeld ) ) {
 				SetQuickState( QG_DONE, quickMelee ? "swung" : "released" );
 				quickDeadline = now + 2000;
@@ -1274,6 +1349,19 @@ void sdGamepadControls::UpdateQuick( idPlayer* player, usercmd_t& cmd, int now )
 				stickyWeapon = inventory.GetCurrentWeapon();
 				stickyReturn = quickPrevWeapon;
 				stickyStart = now;
+				quickPrevWeapon = -1;
+				return;
+			}
+			const int slotNow = inventory.GetCurrentSlot();
+			if ( slotNow != quickBank && slotNow != GAMEPAD_PRIMARY_BANK && slotNow != GAMEPAD_SIDEARM_BANK &&
+				!( slotNow == GAMEPAD_TOOLS_BANK && ArmingTool( player ) == inventory.GetCurrentWeapon() ) ) {
+				// the item's script put the next tool in hand (a placed mine or charge
+				// selects the pliers to arm it): leave it there; UpdateReturnToGun brings
+				// the gun back once fire and use have been let go a while
+				SetQuickState( QG_IDLE, "the script picked the next tool" );
+				if ( quickPrevWeapon >= 0 ) {
+					lastGun = quickPrevWeapon;
+				}
 				quickPrevWeapon = -1;
 				return;
 			}

@@ -110,6 +110,8 @@ private:
 	static int					BankWeaponNamed( idPlayer* player, int bank, const char* text );
 	static bool					WeaponNamed( idPlayer* player, int index, const char* text );
 	static bool					ThirdEyePlaced( idPlayer* player );
+	static idEntity*			ArmableInView( idPlayer* player );
+	static int					ArmingTool( idPlayer* player );
 	void						StartQuickOn( int bank, int weaponIndex, bool alt, bool held, int returnTo );
 	void						UpdateItemButton( idPlayer* player, int now );
 	void						UpdateClassAbility( idPlayer* player, int now );
@@ -161,6 +163,8 @@ private:
 	int							quickTarget;		// the weapon to use, -1: the bank's first
 	bool						quickAlt;			// press alt-fire instead of fire
 	int							quickReturn;		// the weapon to come back to when the target was in hand
+	idEntityPtr< idEntity >		quickArm;			// arming this mine or charge
+	bool						quickArmWas;
 
 	// the item button: press and long press
 	bool						itemHeld;

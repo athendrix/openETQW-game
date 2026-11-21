@@ -148,12 +148,20 @@ ID_INLINE void idWinding2D::SetPointST( int index, float s, float t ) {
 }
 
 ID_INLINE void idWinding2D::AddPoint( float x, float y ) {
+	if ( numPoints >= idWinding2D::MAX_POINTS ) {
+		assert( false );
+		return;
+	}
 	p[numPoints].x = x;
 	p[numPoints].y = y;
 	numPoints++;
 }
 
 ID_INLINE void idWinding2D::AddPoint( float x, float y, float s, float t ) {
+	if ( numPoints >= idWinding2D::MAX_POINTS ) {
+		assert( false );
+		return;
+	}
 	p[numPoints].x = x;
 	p[numPoints].y = y;
 	st[numPoints].x = s;
